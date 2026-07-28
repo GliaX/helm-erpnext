@@ -1,0 +1,8 @@
+# Keep the build context lean.
+helm-erpnext-*
+*.md
+values*.yaml
+.git
+.gitignore
+charts/
+Chart.lock

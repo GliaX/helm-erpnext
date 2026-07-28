@@ -1,0 +1,11 @@
+# Local secrets overlay — never commit.
+values.secret.yaml
+values.*.secret.yaml
+
+# Helm dependency charts (regenerated via `helm dep update`).
+charts/
+Chart.lock
+
+# Editor / OS cruft.
+*.swp
+.DS_Store

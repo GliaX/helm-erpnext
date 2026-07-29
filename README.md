@@ -104,30 +104,46 @@ PVC (and the `erpnext` sites PVC) from the DigitalOcean console / `doctl`.
 5. `helm -n erpnext upgrade erpnext . -f values.yaml -f values.secret.yaml`
 6. Enable `jobs.migrate` for one run (see above).
 
-## Adding Frappe apps (e.g. Frappe CRM) — status: blocked on app bug
+## Frappe CRM — INSTALLED (2026-07-29)
 
 Apps must be baked into the image (only `sites/` is persistent in this chart).
-The IaC-native way is the `Dockerfile` + `.github/workflows/build-image.yml` in
-this repo (builds `ghcr.io/gliax/erpnext:v16.4.1-crm-v1.80.0`).
+This repo's `Dockerfile` + `.github/workflows/build-image.yml` build
+`ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-fix`, deployed on `asset.glia.org`.
 
-**Attempted 2026-07-28 — NOT INSTALLABLE on this instance.** Both recent Frappe
-CRM releases fail against the framework version bundled in `frappe/erpnext:v16.4.1`
-(**Frappe 16.5.0**):
+**Status: ERPNext upgraded to v16.30.0 (Frappe 16.29.0) and Frappe CRM v1.80.0
+installed and working.** `bench migrate` is clean, 39 FCRM doctypes present,
+CRM Lead/Deal creation verified end-to-end.
 
-- **v1.80.0** → `No module named 'frappe.core.doctype.crm_lead_status'` (module
-  resolution, while syncing `CRM Lead Status`).
-- **v1.79.1** → `cannot import name '_add' from 'frappe.desk.form.assign_to'`
-  (Frappe removed/renamed `_add`; CRM imports the old symbol).
+### History / why the v16.30 upgrade was required
 
-Root cause: the instance runs **Frappe 16.5.0**, which is newer than any released
-CRM supports. Both attempts were validated on a throwaway `crmtest` site (prod
-untouched) and the test artifacts were removed. The custom image + build pipeline
-remain here for a future retry **once CRM ships a Frappe-16.5-compatible release**
-(or if the base image is pinned to an older Frappe).
+CRM v1.x uses Frappe framework APIs that older patch releases lack. On the
+previous base (`frappe/erpnext:v16.4.1` → **Frappe 16.5.0**) CRM install/migrate
+failed in two places:
 
-The Shopify→ERPNext donation sync does **not** require Frappe CRM — it uses
-ERPNext core doctypes (`Customer`/`Contact`/`Address`) + one custom doctype
-created via the API. See `GliaX/glia-shopify-erpnext`.
+- `cannot import name '_add' from 'frappe.desk.form.assign_to'` — `_add` is the
+  internal worker, absent in some 16.x patches (including 16.5.0). Fixed in our
+  fork by using the public `add()` (see `tareko/crm:fix-assign-to-v1.x`; upstream
+  PR [frappe/crm#2581](https://github.com/frappe/crm/pull/2581)).
+- `cannot import name 'get_dynamic_linked_docs' from 'frappe.model.delete_doc` —
+  that symbol was [added to Frappe on 2026-04-13](https://github.com/frappe/frappe/commit/f0ef9295),
+  after 16.5.0. Only fixable by upgrading Frappe.
+
+Upgrading the base to `frappe/erpnext:v16.30.0` (Frappe 16.29.0) provides both
+symbols, so CRM runs natively. The image still carries the fork's `_add` fix
+(harmless on 16.29 where `_add` also exists) until upstream merges #2581, after
+which it can switch to vanilla `frappe/crm`.
+
+The Shopify→ERPNext donation sync can target either CRM (`CRM Contact`) or
+ERPNext core (`Customer`/`Contact`/`Address`). See `GliaX/glia-shopify-erpnext`.
+
+### Operational notes
+
+- The chart is pinned to **8.0.21** (app v16.30 via the image override). Chart
+  8.0.69 restructures the MariaDB templates — upgrading the chart is deferred to
+  avoid touching the running MariaDB; do it separately with care.
+- `values.pin.yaml` (node-pin) is **required** for every rollout (RWO sites PVC).
+- After any future image rebuild, run `bench --site asset.glia.org migrate` then
+  `kubectl rollout restart` the erpnext deployments.
 
 ## Secret hygiene
 

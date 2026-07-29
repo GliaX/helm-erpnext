@@ -17,8 +17,8 @@ externalRedis:
   queue: ""
 
 image:
-  repository: frappe/erpnext
-  tag: v16.4.1
+  repository: ghcr.io/gliax/erpnext
+  tag: v16.30.0-crm-v1.80.0-fix
   pullPolicy: IfNotPresent
 
 nginx:
@@ -361,6 +361,7 @@ jobs:
     adminExistingSecretKey: "password2"
     installApps:
     - "erpnext"
+    - "crm"
     dbType: "mariadb"
     backoffLimit: 0
     resources: {}

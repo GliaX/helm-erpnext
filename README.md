@@ -53,20 +53,32 @@ kubectl -n erpnext get secret -o yaml | grep -iE 'root|password'
 #   bench --site asset.glia.org set-admin-password <new>
 ```
 
-## Day-to-day operations
+## CRITICAL: node-pinning (`values.pin.yaml`) is REQUIRED
+
+The sites PVC is **ReadWriteOnce** (DigitalOcean block storage) attached to one
+node (`pool-f971mwbjk-372vst`). The chart's default topology-spread
+(`maxSkew:1 / DoNotSchedule`) scatters pods across nodes during rollouts, which
+triggers **Multi-Attach errors** (the cluster even autoscales new nodes trying to
+place them). So every deploy/upgrade MUST include the pin overlay:
 
 ```bash
-# Preview a change (dry run)
-helm -n erpnext diff upgrade erpnext . -f values.yaml -f values.secret.yaml   # needs helm-diff
+helm -n erpnext upgrade erpnext frappe/erpnext --version 8.0.21 \
+  -f values.yaml -f values.secret.yaml -f values.pin.yaml
+```
 
-# Apply
-helm -n erpnext upgrade --install erpnext . -f values.yaml -f values.secret.yaml
+`values.pin.yaml` sets `nodeSelector: kubernetes.io/hostname=pool-f971mwbjk-372vst`
+on every erpnext deployment and relaxes topology-spread to `ScheduleAnyway`.
+**Always pass `-f values.pin.yaml`** or the rollout will deadlock. (Durable fix:
+migrate the sites PVC to RWX, or switch its storageClass to
+`WaitForFirstConsumer` — tracked as a follow-up.)
 
-# Run bench migrate after an app/chart upgrade (uses the chart's migrate Job)
-# — in values.yaml set jobs.migrate.enabled: true, siteName: asset.glia.org,
-#   then helm upgrade (the Job runs once), then set it back to false.
+## Deploy / upgrade
 
-# Create a site (idempotent; skips if it exists) — jobs.createSite in values.yaml.
+```bash
+helm repo add frappe https://helm.erpnext.com
+helm repo update
+helm -n erpnext upgrade erpnext frappe/erpnext --version 8.0.21 \
+  -f values.yaml -f values.secret.yaml -f values.pin.yaml
 ```
 
 ## Backups
@@ -92,21 +104,33 @@ PVC (and the `erpnext` sites PVC) from the DigitalOcean console / `doctl`.
 5. `helm -n erpnext upgrade erpnext . -f values.yaml -f values.secret.yaml`
 6. Enable `jobs.migrate` for one run (see above).
 
-## Adding Frappe apps (e.g. Frappe CRM) — future
+## Adding Frappe apps (e.g. Frappe CRM) — status: blocked on app bug
 
 Apps must be baked into the image (only `sites/` is persistent in this chart).
-The durable, IaC-native way is to maintain a custom image in **this repo**:
+The IaC-native way is the `Dockerfile` + `.github/workflows/build-image.yml` in
+this repo (builds `ghcr.io/gliax/erpnext:v16.4.1-crm-v1.80.0`).
 
-1. Add a `Dockerfile` extending `frappe/erpnext:<tag>` that runs
-   `bench get-app https://github.com/frappe/<app>`.
-2. Build & push to a registry.
-3. Set `image.repository`/`image.tag` in `values.yaml` and append the app to
-   `jobs.createSite.installApps`.
-4. `helm upgrade` (backup first), then `bench --site asset.glia.org install-app <app> && bench migrate`.
+**Attempted 2026-07-28 — FAILED.** Frappe CRM **v1.80.0** (released that day)
+fails to install onto the site against Frappe 16.5.0 / ERPNext 16.4.1 with a
+module-resolution error (`No module named 'frappe.core.doctype.crm_lead_status'`
+while syncing the `CRM Lead Status` doctype, whose JSON correctly declares
+`module: FCRM`). The image rolled out fine, but `bench install-app crm` aborted
+mid-sync; we `uninstall-app`'d it and reverted the image. Asset.glia.org was
+restored to its pre-change state (verified). The image + pipeline remain here
+for a retry with an older CRM release (e.g. **v1.79.1**) once validated.
 
-The current Shopify→ERPNext donation sync does **not** require any new app (it
-uses core doctypes + one custom doctype created via the API). See
-`GliaX/glia-shopify-erpnext`.
+To retry (after a clean install in a staging site first):
+1. Pin a known-good CRM version in `Dockerfile` (`--build-arg CRM_VERSION=v1.79.1`)
+   and in `.github/workflows/build-image.yml`.
+2. Build & push (the workflow does this on push).
+3. `values.yaml`: set `image.repository`/`tag` to the new image and add `"crm"`
+   to `jobs.createSite.installApps`.
+4. `helm upgrade ... -f values.yaml -f values.secret.yaml -f values.pin.yaml`
+   (backup first), then `bench --site asset.glia.org install-app crm && bench migrate`.
+
+The current Shopify→ERPNext donation sync does **not** require Frappe CRM — it
+uses ERPNext core doctypes (`Customer`/`Contact`/`Address`) + one custom doctype
+created via the API. See `GliaX/glia-shopify-erpnext`.
 
 ## Secret hygiene
 

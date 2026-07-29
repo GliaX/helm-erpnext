@@ -1,0 +1,39 @@
+# Pin all erpnext pods to the node that holds the RWO sites PVC
+# (pool-f971mwbjk-372vst) and relax topology-spread so it doesn't fight the pin.
+# Required because the sites PVC is ReadWriteOnce (DO block storage) attached to
+# one node; the chart's default DoNotSchedule topology spread scatters pods
+# across nodes and triggers Multi-Attach errors during rollouts.
+nginx:
+  nodeSelector:
+    kubernetes.io/hostname: pool-f971mwbjk-372vst
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+socketio:
+  nodeSelector:
+    kubernetes.io/hostname: pool-f971mwbjk-372vst
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+worker:
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+  gunicorn:
+    nodeSelector:
+      kubernetes.io/hostname: pool-f971mwbjk-372vst
+  scheduler:
+    nodeSelector:
+      kubernetes.io/hostname: pool-f971mwbjk-372vst
+  default:
+    nodeSelector:
+      kubernetes.io/hostname: pool-f971mwbjk-372vst
+  long:
+    nodeSelector:
+      kubernetes.io/hostname: pool-f971mwbjk-372vst
+  short:
+    nodeSelector:
+      kubernetes.io/hostname: pool-f971mwbjk-372vst

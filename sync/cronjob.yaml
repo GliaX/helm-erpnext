@@ -1,0 +1,32 @@
+# Daily Shopify -> ERPNext donation sync (stateless CronJob).
+#
+# Applies with: kubectl apply -f sync/secret.yaml -f sync/cronjob.yaml
+# (secret.yaml is gitignored; copy from secret.example.yaml and fill in.)
+#
+# The pod is stateless: the incremental cursor lives in ERPNext (the
+# `Glia Sync State` singleton), so no PVC / node-pin is needed.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: glia-sync
+  namespace: erpnext
+  labels:
+    app.kubernetes.io/name: glia-sync
+spec:
+  schedule: "0 7 * * *" # daily 07:00 UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: sync
+              image: ghcr.io/gliax/sync:latest
+              imagePullPolicy: Always
+              envFrom:
+                - secretRef:
+                    name: glia-sync-secrets
+              # the image bakes config.yaml; GLIA_SYNC_CONFIG defaults to ./config.yaml

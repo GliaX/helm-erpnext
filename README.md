@@ -110,26 +110,23 @@ Apps must be baked into the image (only `sites/` is persistent in this chart).
 The IaC-native way is the `Dockerfile` + `.github/workflows/build-image.yml` in
 this repo (builds `ghcr.io/gliax/erpnext:v16.4.1-crm-v1.80.0`).
 
-**Attempted 2026-07-28 — FAILED.** Frappe CRM **v1.80.0** (released that day)
-fails to install onto the site against Frappe 16.5.0 / ERPNext 16.4.1 with a
-module-resolution error (`No module named 'frappe.core.doctype.crm_lead_status'`
-while syncing the `CRM Lead Status` doctype, whose JSON correctly declares
-`module: FCRM`). The image rolled out fine, but `bench install-app crm` aborted
-mid-sync; we `uninstall-app`'d it and reverted the image. Asset.glia.org was
-restored to its pre-change state (verified). The image + pipeline remain here
-for a retry with an older CRM release (e.g. **v1.79.1**) once validated.
+**Attempted 2026-07-28 — NOT INSTALLABLE on this instance.** Both recent Frappe
+CRM releases fail against the framework version bundled in `frappe/erpnext:v16.4.1`
+(**Frappe 16.5.0**):
 
-To retry (after a clean install in a staging site first):
-1. Pin a known-good CRM version in `Dockerfile` (`--build-arg CRM_VERSION=v1.79.1`)
-   and in `.github/workflows/build-image.yml`.
-2. Build & push (the workflow does this on push).
-3. `values.yaml`: set `image.repository`/`tag` to the new image and add `"crm"`
-   to `jobs.createSite.installApps`.
-4. `helm upgrade ... -f values.yaml -f values.secret.yaml -f values.pin.yaml`
-   (backup first), then `bench --site asset.glia.org install-app crm && bench migrate`.
+- **v1.80.0** → `No module named 'frappe.core.doctype.crm_lead_status'` (module
+  resolution, while syncing `CRM Lead Status`).
+- **v1.79.1** → `cannot import name '_add' from 'frappe.desk.form.assign_to'`
+  (Frappe removed/renamed `_add`; CRM imports the old symbol).
 
-The current Shopify→ERPNext donation sync does **not** require Frappe CRM — it
-uses ERPNext core doctypes (`Customer`/`Contact`/`Address`) + one custom doctype
+Root cause: the instance runs **Frappe 16.5.0**, which is newer than any released
+CRM supports. Both attempts were validated on a throwaway `crmtest` site (prod
+untouched) and the test artifacts were removed. The custom image + build pipeline
+remain here for a future retry **once CRM ships a Frappe-16.5-compatible release**
+(or if the base image is pinned to an older Frappe).
+
+The Shopify→ERPNext donation sync does **not** require Frappe CRM — it uses
+ERPNext core doctypes (`Customer`/`Contact`/`Address`) + one custom doctype
 created via the API. See `GliaX/glia-shopify-erpnext`.
 
 ## Secret hygiene

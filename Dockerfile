@@ -13,7 +13,7 @@
 #   docker build -t ghcr.io/gliax/erpnext:v16.4.1-crm-v1.80.0-fix \
 #     --build-arg CRM_REPO=https://github.com/tareko/crm.git \
 #     --build-arg CRM_BRANCH=fix-assign-to-v1.x .
-FROM frappe/erpnext:v16.4.1
+FROM frappe/erpnext:v16.30.0
 
 ARG CRM_REPO=https://github.com/tareko/crm.git
 ARG CRM_BRANCH=fix-assign-to-v1.x

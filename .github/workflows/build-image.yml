@@ -40,7 +40,7 @@ jobs:
             CRM_BRANCH=fix-assign-to-v1.x
           push: true
           tags: |
-            ghcr.io/gliax/erpnext:v16.4.1-crm-v1.80.0-fix
+            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-fix
             ghcr.io/gliax/erpnext:latest-crm
           cache-from: type=gha
           cache-to: type=gha,mode=max

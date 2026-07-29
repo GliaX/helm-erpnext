@@ -12,7 +12,7 @@
 #   docker push ghcr.io/gliax/erpnext:v16.4.1-crm-v1.80.0
 FROM frappe/erpnext:v16.4.1
 
-ARG CRM_VERSION=v1.80.0
+ARG CRM_VERSION=v1.79.1
 
 WORKDIR /home/frappe/frappe-bench
 

@@ -36,10 +36,11 @@ jobs:
           context: .
           file: ./Dockerfile
           build-args: |
-            CRM_VERSION=v1.79.1
+            CRM_REPO=https://github.com/tareko/crm.git
+            CRM_BRANCH=fix-assign-to-v1.x
           push: true
           tags: |
-            ghcr.io/gliax/erpnext:v16.4.1-crm-v1.79.1
+            ghcr.io/gliax/erpnext:v16.4.1-crm-v1.80.0-fix
             ghcr.io/gliax/erpnext:latest-crm
           cache-from: type=gha
           cache-to: type=gha,mode=max

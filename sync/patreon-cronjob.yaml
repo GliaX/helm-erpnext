@@ -1,0 +1,28 @@
+# Patreon -> ERPNext donation sync (daily CronJob).
+# Detects new monthly Patreon charges and creates Donation records.
+# Shares the same image + secret as the Shopify CronJob.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: glia-patreon-sync
+  namespace: erpnext
+  labels:
+    app.kubernetes.io/name: glia-patreon-sync
+spec:
+  schedule: "0 6 * * *" # daily 06:00 UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: sync
+              image: ghcr.io/gliax/sync:latest
+              imagePullPolicy: Always
+              command: ["glia-sync-patreon"]
+              envFrom:
+                - secretRef:
+                    name: glia-sync-secrets

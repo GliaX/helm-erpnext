@@ -61,16 +61,31 @@ RUN cd /home/frappe/frappe-bench \
         src="apps/$app/$app/public"; \
         [ -d "$src" ] && ln -sfn "$(pwd)/$src" "assets/$app" || true; \
     done
-# bench build compiles webshop's bundles but (in this version) does NOT register
-# them in the shared assets/assets.json manifest. Without the mapping, Frappe's
-# include_script('web.bundle.js') can't resolve the hashed path and the storefront
-# renders blank. Register them explicitly, pointing at the COMPILED dist bundles
-# (not the source web.bundle.js, which is raw ES-module imports). Hashes are read
-# from the freshly-built dist files.
-RUN cd /home/frappe/frappe-bench \
- && js="$(basename $(ls apps/webshop/webshop/public/dist/js/web.bundle.*.js | head -1))" \
- && css="$(basename $(ls apps/webshop/webshop/public/dist/css/webshop-web.bundle.*.css | head -1))" \
- && python3 -c "import json,sys; p='assets/assets.json'; d=json.load(open(p)); j,c=sys.argv[1],sys.argv[2]; d['web.bundle.js']='/assets/webshop/dist/js/'+j; d['webshop-web.bundle.css']='/assets/webshop/dist/css/'+c; json.dump(d, open(p,'w'), indent=2); print('registered webshop bundles js='+j+' css='+c)" "$js" "$css"
+# bench build rebuilds the bundle FILES (new content hashes) but, in this setup,
+# does NOT keep the shared assets/assets.json manifest in sync — so manifest
+# entries can point at non-existent old-hash files (frappe/erpnext CSS 404s) and
+# webshop's bundles go unregistered. Rebuild the manifest by scanning the actual
+# dist bundles on disk so every <name>.bundle.{js,css} maps to the real hashed
+# file, for every app, in one pass.
+RUN cd /home/frappe/frappe-bench && python3 <<'PY'
+import json, glob, os, re
+p = 'assets/assets.json'
+d = json.load(open(p))
+fixed = 0
+for ad in glob.glob('assets/*/'):
+    app = os.path.basename(ad.rstrip('/'))
+    for sub in ('js', 'css'):
+        for f in glob.glob(f'{ad}dist/{sub}/*.bundle.*.{sub}'):
+            m = re.match(r'(.+\.bundle)\.[^.]+\.(js|css)$', os.path.basename(f))
+            if m:
+                logical = f'{m.group(1)}.{m.group(2)}'
+                val = f'/assets/{app}/dist/{sub}/{os.path.basename(f)}'
+                if d.get(logical) != val:
+                    d[logical] = val
+                    fixed += 1
+json.dump(d, open(p, 'w'), indent=2)
+print(f'manifest rebuilt from dist bundles ({fixed} entries corrected)')
+PY
 
 # Sanity: all apps present and webshop assets collected.
 RUN test -d /home/frappe/frappe-bench/apps/crm \

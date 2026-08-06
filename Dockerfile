@@ -41,15 +41,21 @@ RUN bench get-app "${CRM_REPO}" --branch "${CRM_BRANCH}"
 # `payments`, so it must be present before webshop.
 RUN bench get-app "${PAYMENTS_REPO}" --branch "${PAYMENTS_BRANCH}"
 
-# Fetch the Webshop (E Commerce) app. Same get-app flow; assets are built at
-# image build time (the base image has node.js; the running pod does not).
+# Fetch the Webshop (E Commerce) app. Same get-app flow; assets are built below.
 RUN bench get-app "${WEBSHOP_REPO}" --branch "${WEBSHOP_BRANCH}"
+
+# Build + collect assets for every app. This compiles each app's JS/CSS bundles,
+# generates the shared assets manifest (assets.json), and creates the
+# assets/<app> symlinks Frappe serves. WITHOUT this, webshop's bundles 404 and
+# the storefront renders blank. The base image has node.js; the running pod does not.
+RUN bench build
 
 # Sanity: all apps are present in apps/. (bench registers them in apps.txt.)
 RUN test -d /home/frappe/frappe-bench/apps/crm \
  && test -d /home/frappe/frappe-bench/apps/payments \
  && test -d /home/frappe/frappe-bench/apps/webshop \
+ && test -d /home/frappe/frappe-bench/assets/webshop \
  && grep -q "crm" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "payments" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "webshop" /home/frappe/frappe-bench/sites/apps.txt \
- && echo "crm + payments + webshop apps present"
+ && echo "crm + payments + webshop apps present, assets built"

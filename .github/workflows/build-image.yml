@@ -44,7 +44,7 @@ jobs:
             WEBSHOP_BRANCH=version-16
           push: true
           tags: |
-            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-ecommerce
+            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-ecommerce2
             ghcr.io/gliax/erpnext:latest-crm
           cache-from: type=gha
           cache-to: type=gha,mode=max

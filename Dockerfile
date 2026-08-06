@@ -13,7 +13,9 @@
 #     of core erpnext in v15+. Provides Website Item, Webshop/E Commerce
 #     Settings, and Shopping Cart (needed for the Shopify -> ERPNext shop
 #     migration). Without it, the catalog sync imports Items/Prices only and
-#     skips storefront publishing.
+#     skips storefront publishing. Depends on the Payments app.
+#   * Payments (frappe/payments, version-16) — payment gateway plumbing,
+#     extracted from core frappe in v15+. Required by Webshop.
 #
 # Build (the CI workflow does this on push):
 #   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-webshop \
@@ -23,6 +25,8 @@ FROM frappe/erpnext:v16.30.0
 
 ARG CRM_REPO=https://github.com/tareko/crm.git
 ARG CRM_BRANCH=fix-assign-to-v1.x
+ARG PAYMENTS_REPO=https://github.com/frappe/payments.git
+ARG PAYMENTS_BRANCH=version-16
 ARG WEBSHOP_REPO=https://github.com/frappe/webshop.git
 ARG WEBSHOP_BRANCH=version-16
 
@@ -33,13 +37,19 @@ WORKDIR /home/frappe/frappe-bench
 # data (no install-app here).
 RUN bench get-app "${CRM_REPO}" --branch "${CRM_BRANCH}"
 
+# Fetch the Payments app (extracted from core frappe in v15+). Webshop imports
+# `payments`, so it must be present before webshop.
+RUN bench get-app "${PAYMENTS_REPO}" --branch "${PAYMENTS_BRANCH}"
+
 # Fetch the Webshop (E Commerce) app. Same get-app flow; assets are built at
 # image build time (the base image has node.js; the running pod does not).
 RUN bench get-app "${WEBSHOP_REPO}" --branch "${WEBSHOP_BRANCH}"
 
-# Sanity: both apps are present in apps/. (bench registers them in apps.txt.)
+# Sanity: all apps are present in apps/. (bench registers them in apps.txt.)
 RUN test -d /home/frappe/frappe-bench/apps/crm \
+ && test -d /home/frappe/frappe-bench/apps/payments \
  && test -d /home/frappe/frappe-bench/apps/webshop \
  && grep -q "crm" /home/frappe/frappe-bench/sites/apps.txt \
+ && grep -q "payments" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "webshop" /home/frappe/frappe-bench/sites/apps.txt \
- && echo "crm + webshop apps present"
+ && echo "crm + payments + webshop apps present"

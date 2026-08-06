@@ -38,11 +38,13 @@ jobs:
           build-args: |
             CRM_REPO=https://github.com/tareko/crm.git
             CRM_BRANCH=fix-assign-to-v1.x
+            PAYMENTS_REPO=https://github.com/frappe/payments.git
+            PAYMENTS_BRANCH=version-16
             WEBSHOP_REPO=https://github.com/frappe/webshop.git
             WEBSHOP_BRANCH=version-16
           push: true
           tags: |
-            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-webshop
+            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-ecommerce
             ghcr.io/gliax/erpnext:latest-crm
           cache-from: type=gha
           cache-to: type=gha,mode=max

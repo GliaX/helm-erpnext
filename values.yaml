@@ -18,7 +18,7 @@ externalRedis:
 
 image:
   repository: ghcr.io/gliax/erpnext
-  tag: v16.30.0-crm-v1.80.0-webshop
+  tag: v16.30.0-crm-v1.80.0-ecommerce
   pullPolicy: IfNotPresent
 
 nginx:

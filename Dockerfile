@@ -61,6 +61,14 @@ RUN cd /home/frappe/frappe-bench \
         src="apps/$app/$app/public"; \
         [ -d "$src" ] && ln -sfn "$(pwd)/$src" "assets/$app" || true; \
     done
+# bench build compiles webshop's bundles but (in this version) does NOT register
+# them in the shared assets/assets.json manifest. Without the mapping, Frappe's
+# include_script('web.bundle.js') can't resolve the hashed path and the storefront
+# renders blank. Register them explicitly with full /assets/ paths. The CSS hash
+# is read from the freshly-built dist file.
+RUN cd /home/frappe/frappe-bench \
+ && css="$(basename $(ls apps/webshop/webshop/public/dist/css/webshop-web.bundle.*.css | head -1))" \
+ && python3 -c "import json,sys; p='assets/assets.json'; d=json.load(open(p)); d['web.bundle.js']='/assets/webshop/web.bundle.js'; d['webshop-web.bundle.css']='/assets/webshop/dist/css/'+sys.argv[1]; json.dump(d, open(p,'w'), indent=2); print('registered webshop bundles (css='+sys.argv[1]+')')" "$css"
 
 # Sanity: all apps present and webshop assets collected.
 RUN test -d /home/frappe/frappe-bench/apps/crm \

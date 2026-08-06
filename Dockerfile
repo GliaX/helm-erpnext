@@ -1,22 +1,30 @@
-# Custom ERPNext image bundling Frappe CRM.
+# Custom ERPNext image bundling Frappe CRM + Frappe Webshop (E Commerce).
 #
-# Extends the pinned upstream image (v16.4.1) with the Frappe CRM app so it's
+# Extends the pinned upstream image (v16.30.0) with extra apps so they're
 # present on every pod (apps/ is not on a PVC in this chart, so apps must live
-# in the image). `bench install-app crm` + `bench migrate` are run separately,
+# in the image). `bench install-app <app>` + `bench migrate` are run separately,
 # after the rollout, against the live site.
 #
-# CRM source: the Glia fork's v1.x branch carrying the assign_to fix
-# (use public add() instead of removed private _add()), pending upstream merge
-# of frappe/crm#2581. v1.x (not develop/v2) for Frappe 16 compatibility.
+# Apps bundled:
+#   * CRM (Frappe CRM) — the Glia fork's v1.x branch carrying the assign_to fix
+#     (use public add() instead of removed private _add()), pending upstream
+#     merge of frappe/crm#2581. v1.x (not develop/v2) for Frappe 16 compat.
+#   * Webshop (frappe/webshop, version-16) — the E Commerce app extracted out
+#     of core erpnext in v15+. Provides Website Item, Webshop/E Commerce
+#     Settings, and Shopping Cart (needed for the Shopify -> ERPNext shop
+#     migration). Without it, the catalog sync imports Items/Prices only and
+#     skips storefront publishing.
 #
 # Build (the CI workflow does this on push):
-#   docker build -t ghcr.io/gliax/erpnext:v16.4.1-crm-v1.80.0-fix \
+#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-webshop \
 #     --build-arg CRM_REPO=https://github.com/tareko/crm.git \
 #     --build-arg CRM_BRANCH=fix-assign-to-v1.x .
 FROM frappe/erpnext:v16.30.0
 
 ARG CRM_REPO=https://github.com/tareko/crm.git
 ARG CRM_BRANCH=fix-assign-to-v1.x
+ARG WEBSHOP_REPO=https://github.com/frappe/webshop.git
+ARG WEBSHOP_BRANCH=version-16
 
 WORKDIR /home/frappe/frappe-bench
 
@@ -25,7 +33,13 @@ WORKDIR /home/frappe/frappe-bench
 # data (no install-app here).
 RUN bench get-app "${CRM_REPO}" --branch "${CRM_BRANCH}"
 
-# Sanity: CRM is present in apps/. (bench registers it in sites/apps.txt.)
+# Fetch the Webshop (E Commerce) app. Same get-app flow; assets are built at
+# image build time (the base image has node.js; the running pod does not).
+RUN bench get-app "${WEBSHOP_REPO}" --branch "${WEBSHOP_BRANCH}"
+
+# Sanity: both apps are present in apps/. (bench registers them in apps.txt.)
 RUN test -d /home/frappe/frappe-bench/apps/crm \
+ && test -d /home/frappe/frappe-bench/apps/webshop \
  && grep -q "crm" /home/frappe/frappe-bench/sites/apps.txt \
- && echo "crm app present"
+ && grep -q "webshop" /home/frappe/frappe-bench/sites/apps.txt \
+ && echo "crm + webshop apps present"

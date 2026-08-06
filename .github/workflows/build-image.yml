@@ -1,8 +1,8 @@
 name: build-image
 
-# Build and publish the custom ERPNext+Frappe CRM image whenever the Dockerfile
-# changes (or on manual dispatch). The Actions GITHUB_TOKEN has packages:write,
-# so no extra secrets are needed.
+# Build and publish the custom ERPNext+Frappe CRM+Webshop image whenever the
+# Dockerfile changes (or on manual dispatch). The Actions GITHUB_TOKEN has
+# packages:write, so no extra secrets are needed.
 
 on:
   push:
@@ -38,9 +38,11 @@ jobs:
           build-args: |
             CRM_REPO=https://github.com/tareko/crm.git
             CRM_BRANCH=fix-assign-to-v1.x
+            WEBSHOP_REPO=https://github.com/frappe/webshop.git
+            WEBSHOP_BRANCH=version-16
           push: true
           tags: |
-            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-fix
+            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-webshop
             ghcr.io/gliax/erpnext:latest-crm
           cache-from: type=gha
           cache-to: type=gha,mode=max

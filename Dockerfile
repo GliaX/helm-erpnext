@@ -16,11 +16,14 @@
 #     skips storefront publishing. Depends on the Payments app.
 #   * Payments (frappe/payments, version-16) — payment gateway plumbing,
 #     extracted from core frappe in v15+. Required by Webshop.
+#   * Glia Email Builder (GliaX/glia-email-builder) — the block-based WYSIWYG
+#     donor email builder. Fetched from its own repository and pinned to a tag.
 #
 # Build (the CI workflow does this on push):
-#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-webshop \
+#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder1 \
 #     --build-arg CRM_REPO=https://github.com/tareko/crm.git \
-#     --build-arg CRM_BRANCH=fix-assign-to-v1.x .
+#     --build-arg CRM_BRANCH=fix-assign-to-v1.x \
+#     --build-arg EMAIL_BUILDER_REF=v1.0.0 .
 FROM frappe/erpnext:v16.30.0
 
 ARG CRM_REPO=https://github.com/tareko/crm.git
@@ -29,6 +32,8 @@ ARG PAYMENTS_REPO=https://github.com/frappe/payments.git
 ARG PAYMENTS_BRANCH=version-16
 ARG WEBSHOP_REPO=https://github.com/frappe/webshop.git
 ARG WEBSHOP_BRANCH=version-16
+ARG EMAIL_BUILDER_REPO=https://github.com/GliaX/glia-email-builder
+ARG EMAIL_BUILDER_REF=v1.0.0
 
 WORKDIR /home/frappe/frappe-bench
 
@@ -44,20 +49,27 @@ RUN bench get-app "${PAYMENTS_REPO}" --branch "${PAYMENTS_BRANCH}"
 # Fetch the Webshop (E Commerce) app. Same get-app flow.
 RUN bench get-app "${WEBSHOP_REPO}" --branch "${WEBSHOP_BRANCH}"
 
+# Fetch the Glia Email Builder at the tag pinned above. Keeping the app in its
+# own repository keeps Helm changes independent of app releases; bump
+# EMAIL_BUILDER_REF to consume a new release. This does not touch site data.
+RUN bench get-app "${EMAIL_BUILDER_REPO}" --branch "${EMAIL_BUILDER_REF}"
+
 # In a siteless image build, `bench get-app` does not always register the app in
 # sites/apps.txt — and `bench build` only compiles+symlinks apps listed there.
 # Register all bundled apps explicitly, then build (compiles JS/CSS bundles,
 # writes the shared assets.json manifest, and creates the assets/<app> symlinks
 # Frappe serves). Without this, webshop's bundles 404 and the storefront is blank.
 RUN cd /home/frappe/frappe-bench \
- && for app in payments webshop crm; do \
+ && touch sites/apps.txt \
+ && if [ -n "$(tail -c 1 sites/apps.txt)" ]; then printf '\n' >> sites/apps.txt; fi \
+ && for app in payments webshop crm glia_email_builder; do \
         grep -qxF "$app" sites/apps.txt || echo "$app" >> sites/apps.txt; \
     done
 RUN bench build
 # Belt-and-suspenders: ensure the assets/<app> symlinks exist (bench build makes
 # these, but recreate for any app that was missed).
 RUN cd /home/frappe/frappe-bench \
- && for app in payments webshop crm; do \
+ && for app in payments webshop crm glia_email_builder; do \
         src="apps/$app/$app/public"; \
         [ -d "$src" ] && ln -sfn "$(pwd)/$src" "assets/$app" || true; \
     done
@@ -87,12 +99,17 @@ json.dump(d, open(p, 'w'), indent=2)
 print(f'manifest rebuilt from dist bundles ({fixed} entries corrected)')
 PY
 
-# Sanity: all apps present and webshop assets collected.
+# Sanity: all apps present and assets collected.
 RUN test -d /home/frappe/frappe-bench/apps/crm \
  && test -d /home/frappe/frappe-bench/apps/payments \
  && test -d /home/frappe/frappe-bench/apps/webshop \
+ && test -d /home/frappe/frappe-bench/apps/glia_email_builder \
  && test -d /home/frappe/frappe-bench/assets/webshop \
+ && test -d /home/frappe/frappe-bench/assets/glia_email_builder \
+ && test -f /home/frappe/frappe-bench/assets/glia_email_builder/js/email_builder/app.js \
+ && test -f /home/frappe/frappe-bench/assets/glia_email_builder/css/email_builder_email.css \
  && grep -q "crm" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "payments" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "webshop" /home/frappe/frappe-bench/sites/apps.txt \
- && echo "crm + payments + webshop apps present, assets built"
+ && grep -q "glia_email_builder" /home/frappe/frappe-bench/sites/apps.txt \
+ && echo "crm + payments + webshop + email builder apps present, assets built"

@@ -9,3 +9,7 @@ Chart.lock
 # Editor / OS cruft.
 *.swp
 .DS_Store
+.env
+
+# Local research/scratch artifacts (EveryAction recon, renders, screenshots).
+/.research/

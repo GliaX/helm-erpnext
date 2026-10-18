@@ -11,7 +11,7 @@ configured; `kubectl apply`/manual edits should be avoided going forward.
 |---|---|
 | **Release / namespace** | `erpnext` / `erpnext` |
 | **Upstream chart** | `frappe/erpnext` **8.0.21** |
-| **App version (image)** | `frappe/erpnext:v16.4.1` |
+| **App version (image)** | custom `gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder1` (ERPNext v16.30.0 + CRM + Payments + Webshop + Glia Email Builder) |
 | **Site** | `asset.glia.org` |
 | **Database** | in-cluster MariaDB statefulset (`mariadb:10.6`) on a DigitalOcean block-storage PVC (`do-block-storage`, 8 Gi). A DigitalOcean managed DB is configured in `values.yaml` but currently **disabled** (commented). |
 | **Backups** | `data-erpnext-mariadb-sts-0` PVC + `erpnext` (sites) PVC. See [Backups](#backups). |
@@ -144,6 +144,94 @@ ERPNext core (`Customer`/`Contact`/`Address`). See `GliaX/glia-shopify-erpnext`.
 - `values.pin.yaml` (node-pin) is **required** for every rollout (RWO sites PVC).
 - After any future image rebuild, run `bench --site asset.glia.org migrate` then
   `kubectl rollout restart` the erpnext deployments.
+
+## Glia Email Builder (2026-10-18)
+
+This adds a block-based WYSIWYG email editor for donor communications modelled on
+EveryAction's drag-and-drop **Targeted Email** builder. The app lives in its own
+repository, [`GliaX/glia-email-builder`](https://github.com/GliaX/glia-email-builder),
+under the **AGPL-3.0-or-later** license. The Dockerfile fetches the pinned
+release tag (`v1.0.0`) with `bench get-app`; bump `EMAIL_BUILDER_REF` to consume
+a new app release. App tests and releases live in that repository.
+
+What it adds:
+
+- a full-screen **Email Builder** Desk page (`/desk/email-builder`) with a
+  Content / Rows / Settings panel, inline rich-text editing, drag-and-drop
+  blocks, 1–6 column rows, mobile/desktop views, image library, preview and
+  send-sample;
+- **11 pre-loaded donor templates** (newsletter, appeal, thank-you, event,
+  announcement, letter, recurring giving, blank) that staff can copy and edit;
+- merge fields with fallbacks, EveryAction conditional syntax, and row display
+  conditions;
+- compiled email-safe HTML written to the core **Email Template**, so existing
+  **Email Campaign** sending is unchanged.
+
+### Deploying it
+
+The image built from this repo includes the app at the pinned tag. After the new
+image (`...-emailbuilder1`) is rolled out, install the app once against the live site.
+The site's `sites/apps.txt` lives on the sites PVC (not the image), so register
+the app there first, then install it:
+
+```bash
+kubectl -n erpnext exec deploy/erpnext-gunicorn -- bash -lc \
+  'cd /home/frappe/frappe-bench && grep -qxF glia_email_builder sites/apps.txt || echo glia_email_builder >> sites/apps.txt'
+
+kubectl -n erpnext exec deploy/erpnext-gunicorn -- \
+  bench --site asset.glia.org install-app glia_email_builder
+
+kubectl -n erpnext exec deploy/erpnext-gunicorn -- \
+  bench --site asset.glia.org migrate
+
+kubectl -n erpnext rollout restart deploy/erpnext-gunicorn deploy/erpnext-worker-default
+```
+
+`install-app` creates the `Email Builder User` role (with write access to Email
+Templates via a Custom DocPerm) and seeds the starter templates. Assign that role
+to communications staff instead of making them System Managers.
+
+### Using it
+
+- Email Template list → **New Email (Block Builder)**, or
+- the Email Builder app entry on the apps screen, or
+- an existing Email Template → **Actions → Design with Blocks**.
+
+The classic Email Template form remains for raw HTML templates.
+
+---
+## Outgoing email / SMTP (2026-10-10)
+
+ERPNext sends **no plaintext passwords** — user onboarding and login use
+one-time links (password-reset links, 20-min expiry; email-login links, 10-min
+expiry — both already enabled in System Settings). These were dead until an
+outgoing email account existed; configured as:
+
+- **Email Account** `ERPNext Outgoing` (in-site, not in helm values — lives in
+  the site DB, so it's upgrade-safe)
+- SMTP `mail.emlondon.ca:587` STARTTLS, AUTH as `erp@glia.org`
+  (credentials in k8s secret `smtp-creds` — also stored encrypted in the site)
+- `default_outgoing: 1`
+
+SPF is aligned automatically (the MX is in glia.org's `v=spf1 a mx ...`).
+DKIM/DMARC: verify on a real outbound message that Postfix signs for
+`glia.org` (record `default._domainkey.glia.org` exists); DMARC is `p=none`.
+
+Re-create after a site reset:
+```bash
+kubectl -n erpnext exec -it deploy/erpnext-gunicorn -- bash
+bench --site asset.glia.org console
+# frappe.get_doc({"doctype":"Email Account","__islocal":1,"email_account_name":"ERPNext Outgoing","email_id":"erp@glia.org","enable_outgoing":1,"default_outgoing":1,"smtp_server":"mail.emlondon.ca","smtp_port":587,"use_tls":1,"use_ssl":0,"password":"<from secret smtp-creds>"}).insert(ignore_permissions=True); frappe.db.commit()
+```
+
+**Gotcha:** `frappe.sendmail` queues (it does not send synchronously), and any
+DB writes from `bench console` — queue rows included — are rolled back on exit
+unless you explicitly `frappe.db.commit()`. Verify delivery by IMAP, not by
+absence of exceptions.
+
+Note: the API token in `.env` (`opapi-…`) is an **OpenProvider** key, not an
+ERPNext API key (those are `api_key:api_secret` pairs from User → My Settings →
+API Access). A working pair exists in k8s secret `glia-sync-secrets`.
 
 ## Secret hygiene
 

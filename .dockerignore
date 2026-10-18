@@ -6,3 +6,7 @@ values*.yaml
 .gitignore
 charts/
 Chart.lock
+
+# Keep Python scratch files out of the image build context.
+**/__pycache__/
+**/*.pyc

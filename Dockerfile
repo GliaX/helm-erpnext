@@ -20,10 +20,10 @@
 #     donor email builder. Fetched from its own repository and pinned to a tag.
 #
 # Build (the CI workflow does this on push):
-#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder1 \
+#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder2 \
 #     --build-arg CRM_REPO=https://github.com/tareko/crm.git \
 #     --build-arg CRM_BRANCH=fix-assign-to-v1.x \
-#     --build-arg EMAIL_BUILDER_REF=v1.0.0 .
+#     --build-arg EMAIL_BUILDER_REF=v1.0.1 .
 FROM frappe/erpnext:v16.30.0
 
 ARG CRM_REPO=https://github.com/tareko/crm.git
@@ -33,7 +33,7 @@ ARG PAYMENTS_BRANCH=version-16
 ARG WEBSHOP_REPO=https://github.com/frappe/webshop.git
 ARG WEBSHOP_BRANCH=version-16
 ARG EMAIL_BUILDER_REPO=https://github.com/GliaX/glia-email-builder
-ARG EMAIL_BUILDER_REF=v1.0.0
+ARG EMAIL_BUILDER_REF=v1.0.1
 
 WORKDIR /home/frappe/frappe-bench
 

@@ -11,7 +11,7 @@ configured; `kubectl apply`/manual edits should be avoided going forward.
 |---|---|
 | **Release / namespace** | `erpnext` / `erpnext` |
 | **Upstream chart** | `frappe/erpnext` **8.0.21** |
-| **App version (image)** | custom `gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder1` (ERPNext v16.30.0 + CRM + Payments + Webshop + Glia Email Builder) |
+| **App version (image)** | custom `gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder2` (ERPNext v16.30.0 + CRM + Payments + Webshop + Glia Email Builder) |
 | **Site** | `asset.glia.org` |
 | **Database** | in-cluster MariaDB statefulset (`mariadb:10.6`) on a DigitalOcean block-storage PVC (`do-block-storage`, 8 Gi). A DigitalOcean managed DB is configured in `values.yaml` but currently **disabled** (commented). |
 | **Backups** | `data-erpnext-mariadb-sts-0` PVC + `erpnext` (sites) PVC. See [Backups](#backups). |
@@ -151,7 +151,7 @@ This adds a block-based WYSIWYG email editor for donor communications modelled o
 EveryAction's drag-and-drop **Targeted Email** builder. The app lives in its own
 repository, [`GliaX/glia-email-builder`](https://github.com/GliaX/glia-email-builder),
 under the **AGPL-3.0-or-later** license. The Dockerfile fetches the pinned
-release tag (`v1.0.0`) with `bench get-app`; bump `EMAIL_BUILDER_REF` to consume
+release tag (`v1.0.1`) with `bench get-app`; bump `EMAIL_BUILDER_REF` to consume
 a new app release. App tests and releases live in that repository.
 
 What it adds:
@@ -170,7 +170,7 @@ What it adds:
 ### Deploying it
 
 The image built from this repo includes the app at the pinned tag. After the new
-image (`...-emailbuilder1`) is rolled out, install the app once against the live site.
+image (`...-emailbuilder2`) is rolled out, install the app once against the live site.
 The site's `sites/apps.txt` lives on the sites PVC (not the image), so register
 the app there first, then install it:
 

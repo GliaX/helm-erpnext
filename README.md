@@ -207,11 +207,16 @@ one-time links (password-reset links, 20-min expiry; email-login links, 10-min
 expiry — both already enabled in System Settings). These were dead until an
 outgoing email account existed; configured as:
 
-- **Email Account** `ERPNext Outgoing` (in-site, not in helm values — lives in
-  the site DB, so it's upgrade-safe)
-- SMTP `mail.emlondon.ca:587` STARTTLS, AUTH as `erp@glia.org`
+- **Email Account** `Glia` (in-site, not in helm values — lives in the site DB,
+  so it's upgrade-safe)
+- From **`Glia <info@glia.org>`**
+- SMTP `mail.emlondon.ca:587` STARTTLS, AUTH as `erp@glia.org` via a separate
+  **Login ID** (`login_id_is_different`)
   (credentials in k8s secret `smtp-creds` — also stored encrypted in the site)
 - `default_outgoing: 1`
+- `always_use_account_email_id_as_sender = 1` and
+  `always_use_account_name_as_sender_name = 1`, so Email Campaigns and the
+  builder's sample sends use the account identity even when a sender user is set
 
 SPF is aligned automatically (the MX is in glia.org's `v=spf1 a mx ...`).
 DKIM/DMARC: verify on a real outbound message that Postfix signs for
@@ -221,7 +226,7 @@ Re-create after a site reset:
 ```bash
 kubectl -n erpnext exec -it deploy/erpnext-gunicorn -- bash
 bench --site asset.glia.org console
-# frappe.get_doc({"doctype":"Email Account","__islocal":1,"email_account_name":"ERPNext Outgoing","email_id":"erp@glia.org","enable_outgoing":1,"default_outgoing":1,"smtp_server":"mail.emlondon.ca","smtp_port":587,"use_tls":1,"use_ssl":0,"password":"<from secret smtp-creds>"}).insert(ignore_permissions=True); frappe.db.commit()
+# frappe.get_doc({"doctype":"Email Account","__islocal":1,"email_account_name":"Glia","email_id":"info@glia.org","login_id_is_different":1,"login_id":"erp@glia.org","enable_outgoing":1,"default_outgoing":1,"always_use_account_email_id_as_sender":1,"always_use_account_name_as_sender_name":1,"smtp_server":"mail.emlondon.ca","smtp_port":587,"use_tls":1,"use_ssl":0,"password":"<from secret smtp-creds>"}).insert(ignore_permissions=True); frappe.db.commit()
 ```
 
 **Gotcha:** `frappe.sendmail` queues (it does not send synchronously), and any

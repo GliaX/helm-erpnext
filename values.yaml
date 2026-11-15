@@ -342,7 +342,13 @@ jobs:
   configure:
     # jobName: ""
     enabled: true
-    fixVolume: true
+    # The ownership init container runs `chown -R 1000:1000 sites logs` as root.
+    # The sites volume already belongs to frappe:frappe, and during a rollout the
+    # sites/assets symlink is recreated, so the recursive chown races it and dies
+    # with `chown: .../sites/assets: No such file or directory`, failing the whole
+    # upgrade. Only set this back to true if the PVC is ever recreated from
+    # scratch and needs its ownership fixed once.
+    fixVolume: false
     backoffLimit: 0
     resources: {}
     nodeSelector: {}

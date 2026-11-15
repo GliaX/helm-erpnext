@@ -49,10 +49,10 @@ jobs:
             DONATIONS_REPO=https://github.com/GliaX/glia-donations
             DONATIONS_REF=v0.3.1
             OPS_REPO=https://github.com/GliaX/glia-ops
-            OPS_REF=v0.1.4
+            OPS_REF=v0.1.5
           push: true
           tags: |
-            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout6-donations8-ops5
+            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout6-donations8-ops6
             ghcr.io/gliax/erpnext:latest-crm
           cache-from: type=gha
           cache-to: type=gha,mode=max

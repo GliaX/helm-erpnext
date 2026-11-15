@@ -18,7 +18,7 @@ externalRedis:
 
 image:
   repository: ghcr.io/gliax/erpnext
-  tag: v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout7-donations8-ops8
+  tag: v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout8-donations8-ops9
   pullPolicy: IfNotPresent
 
 nginx:

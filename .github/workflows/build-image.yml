@@ -45,14 +45,14 @@ jobs:
             WEBSHOP_REPO=https://github.com/frappe/webshop.git
             WEBSHOP_BRANCH=version-16
             GUEST_CHECKOUT_REPO=https://github.com/GliaX/glia-guest-checkout
-            GUEST_CHECKOUT_REF=v0.0.6
+            GUEST_CHECKOUT_REF=v0.0.7
             DONATIONS_REPO=https://github.com/GliaX/glia-donations
             DONATIONS_REF=v0.3.1
             OPS_REPO=https://github.com/GliaX/glia-ops
-            OPS_REF=v0.1.7
+            OPS_REF=v0.1.8
           push: true
           tags: |
-            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout7-donations8-ops8
+            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout8-donations8-ops9
             ghcr.io/gliax/erpnext:latest-crm
           cache-from: type=gha
           cache-to: type=gha,mode=max

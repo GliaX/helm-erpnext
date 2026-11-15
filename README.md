@@ -11,7 +11,7 @@ configured; `kubectl apply`/manual edits should be avoided going forward.
 |---|---|
 | **Release / namespace** | `erpnext` / `erpnext` |
 | **Upstream chart** | `frappe/erpnext` **8.0.21** |
-| **App version (image)** | custom `gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5` (ERPNext v16.30.0 + CRM + Payments + Webshop + Glia Email Builder) |
+| **App version (image)** | custom `gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout1` (ERPNext v16.30.0 + CRM + Payments + Webshop + Glia Email Builder) |
 | **Site** | `asset.glia.org` |
 | **Database** | in-cluster MariaDB statefulset (`mariadb:10.6`) on a DigitalOcean block-storage PVC (`do-block-storage`, 8 Gi). A DigitalOcean managed DB is configured in `values.yaml` but currently **disabled** (commented). |
 | **Backups** | `data-erpnext-mariadb-sts-0` PVC + `erpnext` (sites) PVC. See [Backups](#backups). |

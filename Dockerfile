@@ -18,9 +18,11 @@
 #     extracted from core frappe in v15+. Required by Webshop.
 #   * Glia Email Builder (GliaX/glia-email-builder) — the block-based WYSIWYG
 #     donor email builder. Fetched from its own repository and pinned to a tag.
+#   * Glia Guest Checkout (GliaX/glia-guest-checkout) — cookie-scoped guest cart
+#     and checkout that creates Sales Order + Payment Request without login.
 #
 # Build (the CI workflow does this on push):
-#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5 \
+#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout1 \
 #     --build-arg CRM_REPO=https://github.com/tareko/crm.git \
 #     --build-arg CRM_BRANCH=fix-assign-to-v1.x \
 #     --build-arg EMAIL_BUILDER_REF=v1.0.4 .
@@ -34,6 +36,8 @@ ARG WEBSHOP_REPO=https://github.com/frappe/webshop.git
 ARG WEBSHOP_BRANCH=version-16
 ARG EMAIL_BUILDER_REPO=https://github.com/GliaX/glia-email-builder
 ARG EMAIL_BUILDER_REF=v1.0.4
+ARG GUEST_CHECKOUT_REPO=https://github.com/GliaX/glia-guest-checkout
+ARG GUEST_CHECKOUT_BRANCH=main
 
 WORKDIR /home/frappe/frappe-bench
 
@@ -54,6 +58,10 @@ RUN bench get-app "${WEBSHOP_REPO}" --branch "${WEBSHOP_BRANCH}"
 # EMAIL_BUILDER_REF to consume a new release. This does not touch site data.
 RUN bench get-app "${EMAIL_BUILDER_REPO}" --branch "${EMAIL_BUILDER_REF}"
 
+# Guest checkout app (GliaX/glia-guest-checkout). Adds Guest Cart doctypes and
+# /guest_cart + /guest_order pages; depends on webshop + payments.
+RUN bench get-app "${GUEST_CHECKOUT_REPO}" --branch "${GUEST_CHECKOUT_BRANCH}"
+
 # In a siteless image build, `bench get-app` does not always register the app in
 # sites/apps.txt — and `bench build` only compiles+symlinks apps listed there.
 # Register all bundled apps explicitly, then build (compiles JS/CSS bundles,
@@ -62,14 +70,14 @@ RUN bench get-app "${EMAIL_BUILDER_REPO}" --branch "${EMAIL_BUILDER_REF}"
 RUN cd /home/frappe/frappe-bench \
  && touch sites/apps.txt \
  && if [ -n "$(tail -c 1 sites/apps.txt)" ]; then printf '\n' >> sites/apps.txt; fi \
- && for app in payments webshop crm glia_email_builder; do \
+ && for app in payments webshop crm glia_email_builder glia_guest_checkout; do \
         grep -qxF "$app" sites/apps.txt || echo "$app" >> sites/apps.txt; \
     done
 RUN bench build
 # Belt-and-suspenders: ensure the assets/<app> symlinks exist (bench build makes
 # these, but recreate for any app that was missed).
 RUN cd /home/frappe/frappe-bench \
- && for app in payments webshop crm glia_email_builder; do \
+ && for app in payments webshop crm glia_email_builder glia_guest_checkout; do \
         src="apps/$app/$app/public"; \
         [ -d "$src" ] && ln -sfn "$(pwd)/$src" "assets/$app" || true; \
     done
@@ -104,12 +112,15 @@ RUN test -d /home/frappe/frappe-bench/apps/crm \
  && test -d /home/frappe/frappe-bench/apps/payments \
  && test -d /home/frappe/frappe-bench/apps/webshop \
  && test -d /home/frappe/frappe-bench/apps/glia_email_builder \
+ && test -d /home/frappe/frappe-bench/apps/glia_guest_checkout \
  && test -d /home/frappe/frappe-bench/assets/webshop \
  && test -d /home/frappe/frappe-bench/assets/glia_email_builder \
+ && test -d /home/frappe/frappe-bench/assets/glia_guest_checkout \
  && test -f /home/frappe/frappe-bench/assets/glia_email_builder/js/email_builder/app.js \
  && test -f /home/frappe/frappe-bench/assets/glia_email_builder/css/email_builder_email.css \
  && grep -q "crm" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "payments" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "webshop" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "glia_email_builder" /home/frappe/frappe-bench/sites/apps.txt \
- && echo "crm + payments + webshop + email builder apps present, assets built"
+ && grep -q "glia_guest_checkout" /home/frappe/frappe-bench/sites/apps.txt \
+ && echo "crm + payments + webshop + email builder + guest checkout apps present, assets built"

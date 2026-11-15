@@ -45,10 +45,10 @@ jobs:
             WEBSHOP_REPO=https://github.com/frappe/webshop.git
             WEBSHOP_BRANCH=version-16
             GUEST_CHECKOUT_REPO=https://github.com/GliaX/glia-guest-checkout
-            GUEST_CHECKOUT_BRANCH=main
+            GUEST_CHECKOUT_REF=v0.0.2
           push: true
           tags: |
-            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout2
+            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout3
             ghcr.io/gliax/erpnext:latest-crm
           cache-from: type=gha
           cache-to: type=gha,mode=max

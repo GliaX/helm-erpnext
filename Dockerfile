@@ -20,9 +20,11 @@
 #     donor email builder. Fetched from its own repository and pinned to a tag.
 #   * Glia Guest Checkout (GliaX/glia-guest-checkout) — cookie-scoped guest cart
 #     and checkout that creates Sales Order + Payment Request without login.
+#     Pinned to a release tag (GUEST_CHECKOUT_REF); bump it to ship a new app
+#     version, because the get-app layer is otherwise reused from cache.
 #
 # Build (the CI workflow does this on push):
-#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout1 \
+#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout3 \
 #     --build-arg CRM_REPO=https://github.com/tareko/crm.git \
 #     --build-arg CRM_BRANCH=fix-assign-to-v1.x \
 #     --build-arg EMAIL_BUILDER_REF=v1.0.4 .
@@ -37,7 +39,11 @@ ARG WEBSHOP_BRANCH=version-16
 ARG EMAIL_BUILDER_REPO=https://github.com/GliaX/glia-email-builder
 ARG EMAIL_BUILDER_REF=v1.0.4
 ARG GUEST_CHECKOUT_REPO=https://github.com/GliaX/glia-guest-checkout
-ARG GUEST_CHECKOUT_BRANCH=main
+# Pinned to a release tag, not `main`: Docker reuses the cached get-app layer
+# whenever the build args are unchanged, so tracking a moving branch silently
+# ships stale app code (that is how 0.0.1 got rebuilt as 0.0.1 after main moved
+# to 0.0.2). Bump this tag to consume a new app release.
+ARG GUEST_CHECKOUT_REF=v0.0.2
 
 WORKDIR /home/frappe/frappe-bench
 
@@ -60,7 +66,7 @@ RUN bench get-app "${EMAIL_BUILDER_REPO}" --branch "${EMAIL_BUILDER_REF}"
 
 # Guest checkout app (GliaX/glia-guest-checkout). Adds Guest Cart doctypes and
 # /guest_cart + /guest_order pages; depends on webshop + payments.
-RUN bench get-app "${GUEST_CHECKOUT_REPO}" --branch "${GUEST_CHECKOUT_BRANCH}"
+RUN bench get-app "${GUEST_CHECKOUT_REPO}" --branch "${GUEST_CHECKOUT_REF}"
 
 # In a siteless image build, `bench get-app` does not always register the app in
 # sites/apps.txt — and `bench build` only compiles+symlinks apps listed there.

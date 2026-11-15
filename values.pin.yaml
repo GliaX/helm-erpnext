@@ -1,18 +1,18 @@
 # Pin all erpnext pods to the node that holds the RWO sites PVC
-# (pool-f971mwbjk-372vst) and relax topology-spread so it doesn't fight the pin.
+# (pool-f971mwbjk-3wp9yo) and relax topology-spread so it doesn't fight the pin.
 # Required because the sites PVC is ReadWriteOnce (DO block storage) attached to
 # one node; the chart's default DoNotSchedule topology spread scatters pods
 # across nodes and triggers Multi-Attach errors during rollouts.
 nginx:
   nodeSelector:
-    kubernetes.io/hostname: pool-f971mwbjk-372vst
+    glia.workload: erpnext
   topologySpreadConstraints:
     - maxSkew: 1
       topologyKey: kubernetes.io/hostname
       whenUnsatisfiable: ScheduleAnyway
 socketio:
   nodeSelector:
-    kubernetes.io/hostname: pool-f971mwbjk-372vst
+    glia.workload: erpnext
   topologySpreadConstraints:
     - maxSkew: 1
       topologyKey: kubernetes.io/hostname
@@ -24,16 +24,39 @@ worker:
       whenUnsatisfiable: ScheduleAnyway
   gunicorn:
     nodeSelector:
-      kubernetes.io/hostname: pool-f971mwbjk-372vst
+      glia.workload: erpnext
   scheduler:
     nodeSelector:
-      kubernetes.io/hostname: pool-f971mwbjk-372vst
+      glia.workload: erpnext
   default:
     nodeSelector:
-      kubernetes.io/hostname: pool-f971mwbjk-372vst
+      glia.workload: erpnext
   long:
     nodeSelector:
-      kubernetes.io/hostname: pool-f971mwbjk-372vst
+      glia.workload: erpnext
   short:
     nodeSelector:
-      kubernetes.io/hostname: pool-f971mwbjk-372vst
+      glia.workload: erpnext
+# Jobs (install/upgrade hooks) also mount the RWO sites PVC, so they must land on
+# the same node as the workloads. Without this the configure-bench job can be
+# scheduled on the other node, hang in Init waiting for a multi-attach volume
+# forever, and block every later `helm upgrade`.
+jobs:
+  volumePermissions:
+    nodeSelector:
+      glia.workload: erpnext
+  configure:
+    nodeSelector:
+      glia.workload: erpnext
+  createSite:
+    nodeSelector:
+      glia.workload: erpnext
+  dropSite:
+    nodeSelector:
+      glia.workload: erpnext
+  backup:
+    nodeSelector:
+      glia.workload: erpnext
+  migrate:
+    nodeSelector:
+      glia.workload: erpnext

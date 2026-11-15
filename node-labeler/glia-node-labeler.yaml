@@ -1,0 +1,172 @@
+# Self-healing node labels for RWO-pinned workloads.
+#
+# DigitalOcean recycles node-pool nodes with new hostnames, which orphans any
+# workload pinned by hostname/label (caused the outages of 2026-10-10,
+# 2026-10-14 and 2026-10-25). This CronJob re-applies the placement labels
+# every 2 minutes so a recycled pool self-heals:
+#
+#   glia.workload=erpnext     -> node that runs the ERPNext RWO volumes
+#   glia.workload=openproject -> dedicated node (also tainted) for OpenProject
+#
+# Rules:
+#  - If a Ready node already carries the label, nothing changes.
+#  - If several do (e.g. a stale label resurfaced), all but the one actually
+#    running that workload's pods are unlabelled.
+#  - Otherwise a Ready, schedulable node without any glia.workload label and
+#    without the dedicated-node taint is chosen (fewest running pods wins) and
+#    labelled (+ tainted for openproject, which is the only dedicated one).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: glia-node-labeler
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: glia-node-labeler
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: glia-node-labeler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: glia-node-labeler
+subjects:
+  - kind: ServiceAccount
+    name: glia-node-labeler
+    namespace: default
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: glia-node-labeler
+  namespace: default
+data:
+  label.sh: |
+    #!/bin/bash
+    set -u
+    WORKLOADS="erpnext openproject"
+
+    ready_nodes() {
+      kubectl get nodes -o json | jq -r '.items[]
+        | select(.status.conditions[]? | select(.type=="Ready" and .status=="True"))
+        | select(.spec.unschedulable != true)
+        | [.metadata.name,
+           (.metadata.labels["glia.workload"] // ""),
+           (.spec.taints // [] | map(select(.key=="glia.workload")) | length)]
+        | @tsv'
+    }
+
+    pods_on() {  # node -> number of non-terminated pods
+      kubectl get pods -A --field-selector spec.nodeName="$1" --no-headers 2>/dev/null | wc -l
+    }
+
+    for wl in $WORKLOADS; do
+      echo "== workload: $wl"
+      # Ready, schedulable nodes carrying this label
+      cur=$(ready_nodes | awk -F'\t' -v w="$wl" '$2==w {print $1}')
+      count=$(echo "$cur" | grep -c . || true)
+
+      if [ "$count" -gt 1 ]; then
+        # Keep the node actually running this workload's pods, if any; else the busiest.
+        keep=""
+        for n in $cur; do
+          kubectl get pods -A --field-selector spec.nodeName="$n" -l app.kubernetes.io/name \
+            --no-headers >/dev/null 2>&1
+          # prefer node running pods of this workload
+          if kubectl get pods -A -o json | jq -re --arg n "$n" '.items[]
+              | select(.spec.nodeName==$n and (.metadata.labels["app.kubernetes.io/instance"] // "")=="'"$wl"'")
+              | .metadata.name' | grep -q .; then
+            keep="$n"; break
+          fi
+        done
+        [ -z "$keep" ] && keep=$(for n in $cur; do echo "$(pods_on "$n") $n"; done | sort -rn | head -1 | awk '{print $2}')
+        for n in $cur; do
+          [ "$n" != "$keep" ] && { echo "unlabelling stale $n"; kubectl label node "$n" glia.workload-; }
+        done
+        cur="$keep"
+      fi
+
+      if [ "$count" -ge 1 ]; then
+        echo "ok: $cur already labelled for $wl"
+        continue
+      fi
+
+      # Pick a candidate: Ready, no glia label, not the openproject-tainted
+      # dedicated node (unless we ARE openproject), fewest pods.
+      if [ "$wl" = "openproject" ]; then
+        cand=$(ready_nodes | awk -F'\t' '$2=="" {print $1}')
+      else
+        cand=$(ready_nodes | awk -F'\t' '$2=="" && $3==0 {print $1}')
+      fi
+      if [ -z "$cand" ]; then
+        echo "WARN: no candidate node for $wl"
+        continue
+      fi
+      # Prefer a candidate already running this workload's pods (keeps RWO
+      # volumes where they are after a pin/label mismatch).
+      target=""
+      for n in $cand; do
+        if kubectl get pods -A -o json | jq -re --arg n "$n" --arg w "$wl" \
+            '.items[] | select(.spec.nodeName==$n
+              and ((.metadata.labels["app.kubernetes.io/instance"] // "")==$w
+                or (.metadata.labels["app.kubernetes.io/name"] // "")==$w))
+              | .metadata.name' | grep -q .; then
+          target="$n"; break
+        fi
+      done
+      # Else the least-loaded candidate.
+      [ -z "$target" ] && target=$(for n in $cand; do echo "$(pods_on "$n") $n"; done | sort -n | head -1 | awk '{print $2}')
+      echo "labelling $target for $wl"
+      kubectl label node "$target" glia.workload="$wl" --overwrite
+      if [ "$wl" = "openproject" ]; then
+        kubectl taint node "$target" glia.workload=openproject:NoSchedule --overwrite
+      fi
+    done
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: glia-node-labeler
+  namespace: default
+spec:
+  schedule: "*/2 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 90
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: glia-node-labeler
+        spec:
+          serviceAccountName: glia-node-labeler
+          restartPolicy: Never
+          containers:
+            - name: label
+              image: dtzar/helm-kubectl:3.16
+              command: ["/bin/bash", "/scripts/label.sh"]
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { memory: 128Mi }
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+          volumes:
+            - name: script
+              configMap:
+                name: glia-node-labeler
+                defaultMode: 0744

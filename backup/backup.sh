@@ -87,9 +87,9 @@ fi
 # ---- off-cluster copy #2: DigitalOcean Spaces (independent provider) ------
 STAGE="spaces"
 if [ -n "${SPACES_KEY:-}" ] && [ -n "${SPACES_SECRET:-}" ]; then
-	python3 /opt/glia-backup/spaces.py upload "$BACKUP_DIR" "$STAMP" "$SITE_SLUG" \
+	"$BENCH/env/bin/python" /opt/glia-backup/spaces.py upload "$BACKUP_DIR" "$STAMP" "$SITE_SLUG" \
 		|| fail "$STAGE" "Spaces mirror failed"
-	python3 /opt/glia-backup/spaces.py prune "$REMOTE_KEEP_DAYS" \
+	"$BENCH/env/bin/python" /opt/glia-backup/spaces.py prune "$REMOTE_KEEP_DAYS" \
 		|| log "WARN Spaces prune failed"
 else
 	log "WARN Spaces credentials absent — skipping mirror"

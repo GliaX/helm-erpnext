@@ -25,9 +25,11 @@
 #   * Glia Donations (GliaX/glia-donations) — recurring monthly gifts via Stripe
 #     Billing; a signed webhook writes a Donation record for each paid invoice.
 #     Also pinned to a tag (DONATIONS_REF) for the same cache reason.
+#   * Glia Ops (GliaX/glia-ops) — scheduler health checks, currently the backup
+#     freshness alert that emails info@glia.org when backups stop.
 #
 # Build (the CI workflow does this on push):
-#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout3-donations8 \
+#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout3-donations8-ops1 \
 #     --build-arg CRM_REPO=https://github.com/tareko/crm.git \
 #     --build-arg CRM_BRANCH=fix-assign-to-v1.x \
 #     --build-arg EMAIL_BUILDER_REF=v1.0.4 .
@@ -49,6 +51,8 @@ ARG GUEST_CHECKOUT_REPO=https://github.com/GliaX/glia-guest-checkout
 ARG GUEST_CHECKOUT_REF=v0.0.2
 ARG DONATIONS_REPO=https://github.com/GliaX/glia-donations
 ARG DONATIONS_REF=v0.3.1
+ARG OPS_REPO=https://github.com/GliaX/glia-ops
+ARG OPS_REF=v0.1.0
 
 WORKDIR /home/frappe/frappe-bench
 
@@ -77,6 +81,10 @@ RUN bench get-app "${GUEST_CHECKOUT_REPO}" --branch "${GUEST_CHECKOUT_REF}"
 # Donation records from Stripe subscription invoices.
 RUN bench get-app "${DONATIONS_REPO}" --branch "${DONATIONS_REF}"
 
+# Operational health checks (GliaX/glia-ops): scheduler job that alerts when the
+# backup CronJob stops delivering. Small, dependency-free.
+RUN bench get-app "${OPS_REPO}" --branch "${OPS_REF}"
+
 # In a siteless image build, `bench get-app` does not always register the app in
 # sites/apps.txt — and `bench build` only compiles+symlinks apps listed there.
 # Register all bundled apps explicitly, then build (compiles JS/CSS bundles,
@@ -85,14 +93,14 @@ RUN bench get-app "${DONATIONS_REPO}" --branch "${DONATIONS_REF}"
 RUN cd /home/frappe/frappe-bench \
  && touch sites/apps.txt \
  && if [ -n "$(tail -c 1 sites/apps.txt)" ]; then printf '\n' >> sites/apps.txt; fi \
- && for app in payments webshop crm glia_email_builder glia_guest_checkout glia_donations; do \
+ && for app in payments webshop crm glia_email_builder glia_guest_checkout glia_donations glia_ops; do \
         grep -qxF "$app" sites/apps.txt || echo "$app" >> sites/apps.txt; \
     done
 RUN bench build
 # Belt-and-suspenders: ensure the assets/<app> symlinks exist (bench build makes
 # these, but recreate for any app that was missed).
 RUN cd /home/frappe/frappe-bench \
- && for app in payments webshop crm glia_email_builder glia_guest_checkout glia_donations; do \
+ && for app in payments webshop crm glia_email_builder glia_guest_checkout glia_donations glia_ops; do \
         src="apps/$app/$app/public"; \
         [ -d "$src" ] && ln -sfn "$(pwd)/$src" "assets/$app" || true; \
     done
@@ -135,6 +143,7 @@ RUN test -d /home/frappe/frappe-bench/apps/crm \
  && test -d /home/frappe/frappe-bench/apps/glia_email_builder \
  && test -d /home/frappe/frappe-bench/apps/glia_guest_checkout \
  && test -d /home/frappe/frappe-bench/apps/glia_donations \
+ && test -d /home/frappe/frappe-bench/apps/glia_ops \
  && test -d /home/frappe/frappe-bench/assets/webshop \
  && test -d /home/frappe/frappe-bench/assets/glia_email_builder \
  && test -d /home/frappe/frappe-bench/assets/glia_guest_checkout \
@@ -146,4 +155,5 @@ RUN test -d /home/frappe/frappe-bench/apps/crm \
  && grep -q "glia_email_builder" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "glia_guest_checkout" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "glia_donations" /home/frappe/frappe-bench/sites/apps.txt \
- && echo "crm + payments + webshop + email builder + guest checkout + donations apps present, assets built"
+ && grep -q "glia_ops" /home/frappe/frappe-bench/sites/apps.txt \
+ && echo "crm + payments + webshop + email builder + guest checkout + donations + ops apps present, assets built"

@@ -18,10 +18,15 @@
 #     --from-literal=NC_URL=https://cloud.glia.org \
 #     --from-literal=NC_USER=tloubani \
 #     --from-literal=NC_PASS=<app password>
+#   # copy #2 — a DEDICATED bucket with its own bucket-scoped key. Never the
+#   # shared Mattermost bucket (the script refuses `glia-group` outright).
+#   # Bucket: glia-erpnext-backups (nyc3, private)
+#   # Key:    glia-erpnext-backup, grant bucket=glia-erpnext-backups;permission=readwrite
 #   kubectl -n erpnext create secret generic erpnext-backup-spaces \
 #     --from-literal=SPACES_ENDPOINT=https://nyc3.digitaloceanspaces.com \
 #     --from-literal=SPACES_REGION=nyc3 \
-#     --from-literal=SPACES_BUCKET=glia-group \
+#     --from-literal=SPACES_BUCKET=glia-erpnext-backups \
+#     --from-literal=SPACES_PREFIX= \
 #     --from-literal=SPACES_KEY=<access key> \
 #     --from-literal=SPACES_SECRET=<secret key>
 #
@@ -99,6 +104,9 @@ spec:
                 - name: SPACES_SECRET
                   valueFrom:
                     secretKeyRef: {name: erpnext-backup-spaces, key: SPACES_SECRET}
+                - name: SPACES_PREFIX
+                  valueFrom:
+                    secretKeyRef: {name: erpnext-backup-spaces, key: SPACES_PREFIX}
                 - name: LOCAL_KEEP_DAYS
                   value: "14"
                 - name: REMOTE_KEEP_DAYS

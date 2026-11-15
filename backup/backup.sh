@@ -81,7 +81,7 @@ if [ -n "${NC_URL:-}" ] && [ -n "${NC_USER:-}" ] && [ -n "${NC_PASS:-}" ]; then
 		log "nextcloud verified $NAME ($REMOTE_SIZE bytes)"
 	done
 else
-	log "WARN Nextcloud credentials absent — skipping copy #1"
+	fail "$STAGE" "Nextcloud credentials missing — both off-cluster copies are required"
 fi
 
 # ---- off-cluster copy #2: DigitalOcean Spaces (independent provider) ------
@@ -92,7 +92,7 @@ if [ -n "${SPACES_KEY:-}" ] && [ -n "${SPACES_SECRET:-}" ]; then
 	"$BENCH/env/bin/python" /opt/glia-backup/spaces.py prune "$REMOTE_KEEP_DAYS" \
 		|| log "WARN Spaces prune failed"
 else
-	log "WARN Spaces credentials absent — skipping mirror"
+	fail "$STAGE" "Spaces credentials missing — both off-cluster copies are required"
 fi
 
 # ---- retention on the PVC + Nextcloud -------------------------------------

@@ -23,7 +23,25 @@ from datetime import datetime, timedelta, timezone
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
-PREFIX = os.environ.get("SPACES_PREFIX", "erpnext-backups").strip("/")
+PREFIX = os.environ.get("SPACES_PREFIX", "").strip("/")
+# This job must never write outside the dedicated bucket. The Mattermost bucket
+# (glia-group) is shared infrastructure and was used briefly during setup; refuse
+# it explicitly so a stale secret cannot send donor backups back there.
+FORBIDDEN_BUCKETS = {"glia-group"}
+
+
+
+def _bucket() -> str:
+    bucket = os.environ["SPACES_BUCKET"]
+    if bucket in FORBIDDEN_BUCKETS:
+        raise SystemExit(
+            f"[spaces] refusing to use {bucket}: backups belong in the dedicated bucket"
+        )
+    return bucket
+
+
+def _key(*parts: str) -> str:
+    return "/".join([p for p in [PREFIX, *parts] if p])
 
 
 def client():
@@ -38,8 +56,8 @@ def client():
 
 def upload(backup_dir: str, stamp: str, site_slug: str) -> int:
     s3 = client()
-    bucket = os.environ["SPACES_BUCKET"]
-    remote_dir = f"{PREFIX}/{site_slug}/{stamp}"
+    bucket = _bucket()
+    remote_dir = _key(site_slug, stamp)
     files = sorted(glob.glob(os.path.join(backup_dir, f"{stamp}-{site_slug}-*")))
     if not files:
         print(f"[spaces] no files for stamp {stamp}", file=sys.stderr)
@@ -64,18 +82,19 @@ def upload(backup_dir: str, stamp: str, site_slug: str) -> int:
 
 def prune(keep_days: int) -> int:
     s3 = client()
-    bucket = os.environ["SPACES_BUCKET"]
+    bucket = _bucket()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).strftime("%Y%m%d")
     paginator = s3.get_paginator("list_objects_v2")
+    list_prefix = PREFIX or ""
 
     removed = 0
-    for page in paginator.paginate(Bucket=bucket, Prefix=f"{PREFIX}/"):
+    for page in paginator.paginate(Bucket=bucket, Prefix=f"{list_prefix}/" if list_prefix else ""):
         for obj in page.get("Contents", []):
             key = obj["Key"]
             parts = key.split("/")
-            if len(parts) < 4:
+            if len(parts) < 3:
                 continue
-            stamp = parts[2]
+            stamp = parts[-2]  # layout is .../<stamp>/<file>
             if len(stamp) < 8 or not stamp[:8].isdigit():
                 continue
             if stamp[:8] < cutoff:

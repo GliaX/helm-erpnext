@@ -29,11 +29,17 @@ America/Toronto` (00:30, 06:30, 12:30, 18:30). One pod, pinned to
    `https://cloud.glia.org/remote.php/dav/files/tloubani/erpnext-backups/asset.glia.org/`
    Each file is uploaded then re-read off-cluster and its `Content-Length`
    compared with the local size.
-4. **Copy #2 — DigitalOcean Spaces** (`backup/spaces.py`, boto3, S3 API):
-   bucket `glia-group`, prefix `erpnext-backups/<site>/<stamp>/`, each object
-   verified by `HEAD` size. A different provider from copy #1.
+4. **Copy #2 — DigitalOcean Spaces** (`backup/spaces.py`, boto3, S3 API) into a
+   **dedicated bucket**, `glia-erpnext-backups` (nyc3, private), under
+   `<site>/<stamp>/`. Each object is verified by `HEAD` size. A different
+   provider from copy #1, and separate from the Mattermost bucket — the script
+   **refuses to write into `glia-group`** so a stale secret cannot put donor
+   data back there.
 5. **Retention:** 14 days on the PVC, 120 days on both remote copies.
-6. **Status marker:** `sites/<site>/private/backups/last_run.json` —
+6. **Both copies are mandatory:** if either credential set is missing the run
+   fails (rather than silently degrading to a single copy) and the health check
+   alerts.
+7. **Status marker:** `sites/<site>/private/backups/last_run.json` —
    `{status: ok|failed, stage, stamp, finished}`. A `trap` writes `failed` with
    the stage where it died.
 
@@ -76,11 +82,16 @@ kubectl -n erpnext create secret generic erpnext-backup-nextcloud \
   --from-literal=NC_USER=tloubani \
   --from-literal=NC_PASS=<app password>
 
-# copy #2 — DO Spaces keys (the bucket is shared with Mattermost)
+# copy #2 — dedicated bucket + its own bucket-scoped key.
+# Bucket glia-erpnext-backups (nyc3, private) was created with doctl on
+# 2026-11-15; the key below can only touch that bucket:
+#   doctl spaces keys create glia-erpnext-backup \
+#     --grants 'bucket=glia-erpnext-backups;permission=readwrite'
 kubectl -n erpnext create secret generic erpnext-backup-spaces \
   --from-literal=SPACES_ENDPOINT=https://nyc3.digitaloceanspaces.com \
   --from-literal=SPACES_REGION=nyc3 \
-  --from-literal=SPACES_BUCKET=glia-group \
+  --from-literal=SPACES_BUCKET=glia-erpnext-backups \
+  --from-literal=SPACES_PREFIX= \
   --from-literal=SPACES_KEY=<access key> \
   --from-literal=SPACES_SECRET=<secret key>
 ```
@@ -189,8 +200,9 @@ restore the same key or stored secrets (gateway keys) become unreadable.
 - **Files are not encrypted at rest**: the Spaces bucket and Nextcloud folder
   hold the dump as-is. Both are private, but client-side encryption (age/gpg
   with an offline key) would harden this.
-- **Single-host Nextcloud**: copy #1 lives on the auth droplet; copy #2 (Spaces)
-  is a genuinely different provider, so this is no longer a single-point copy.
+- **Two providers, two failure domains**: copy #1 is Nextcloud on the auth
+  droplet, copy #2 a dedicated DO Spaces bucket with a bucket-scoped key. They
+  share no credentials and no bucket with any other service.
 - **No point-in-time recovery**: MariaDB binary logs are not archived, so
   worst-case loss is one backup interval (currently ≤ 6 h). Tighten the schedule
   if that is still too much.

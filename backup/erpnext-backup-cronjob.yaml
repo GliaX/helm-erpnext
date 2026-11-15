@@ -1,0 +1,176 @@
+# Daily ERPNext backup with off-cluster copy.
+#
+# Why this exists: until now there was no automated backup at all — the newest
+# dump was a hand-run one, and sites/ lives on a single RWO DigitalOcean block
+# volume, so losing the node/PVC lost everything.
+#
+# What it does, once a day, inside a pod that mounts the same sites PVC (pinned
+# to the same node, because the volume is ReadWriteOnce):
+#   1. `bench --site asset.glia.org backup --with-files` (database + public and
+#      private files) on the PVC under sites/<site>/private/backups/.
+#   2. Verifies integrity locally: gzip -t on the dump, tar -tf on the tarballs,
+#      and compares each archive's size against the uploaded copy.
+#   3. Uploads the whole set to Nextcloud via WebDAV — that is the off-cluster
+#      copy. Files on the same PVC are NOT a backup.
+#   4. Prunes local sets older than LOCAL_KEEP_DAYS (14) and remote sets older
+#      than REMOTE_KEEP_DAYS (120). Remote pruning is name-based (the timestamp
+#      is in the filename), so it needs no XML parsing.
+#
+# Credentials: Secret `erpnext-backup-nextcloud` (NC_URL, NC_USER, NC_PASS — a
+# Nextcloud *app password* for tloubani, see ACCESS.md §2). Created with:
+#   kubectl -n erpnext create secret generic erpnext-backup-nextcloud \
+#     --from-literal=NC_URL=https://cloud.glia.org \
+#     --from-literal=NC_USER=tloubani \
+#     --from-literal=NC_PASS=<app password>
+#
+# Apply:
+#   kubectl apply -f backup/erpnext-backup-cronjob.yaml
+# Run now:
+#   kubectl -n erpnext create job --from=cronjob/erpnext-backup erpnext-backup-manual-$(date +%H%M)
+# Watch:
+#   kubectl -n erpnext logs -f job/erpnext-backup-manual-<HHMM>
+# Restore drill: backup/README.md.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: erpnext-backup
+  namespace: erpnext
+  labels:
+    app.kubernetes.io/name: erpnext
+    app.kubernetes.io/component: backup
+spec:
+  schedule: "30 3 * * *"
+  timeZone: "America/Toronto"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 7200
+      ttlSecondsAfterFinished: 1209600   # keep finished jobs 14 days
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: erpnext
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: Never
+          # The sites PVC is ReadWriteOnce (DO block storage). Pods on the same
+          # node share it; a pod on the other node would hang on multi-attach.
+          nodeSelector:
+            glia.workload: erpnext
+          securityContext:
+            supplementalGroups: [1000]
+          containers:
+            - name: backup
+              image: ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout3
+              command: ["bash", "-lc"]
+              args:
+                - |
+                  set -euo pipefail
+                  SITE=asset.glia.org
+                  # bench writes backup filenames with the site slug (dots -> _)
+                  SITE_SLUG=${SITE//./_}
+                  BENCH=/home/frappe/frappe-bench
+                  BACKUP_DIR="$BENCH/sites/$SITE/private/backups"
+                  LOCAL_KEEP_DAYS=14
+                  REMOTE_KEEP_DAYS=120
+
+                  : "${NC_URL:?NC_URL missing}"
+                  : "${NC_USER:?NC_USER missing}"
+                  : "${NC_PASS:?NC_PASS missing}"
+                  REMOTE_DIR="$NC_URL/remote.php/dav/files/$NC_USER/erpnext-backups/$SITE"
+
+                  log() { printf '%s [backup] %s\n' "$(date -Is)" "$*"; }
+                  die() { printf '%s [backup] FATAL: %s\n' "$(date -Is)" "$*" >&2; exit 1; }
+
+                  cd "$BENCH"
+                  log "starting on $(hostname)"
+                  bench --site "$SITE" backup --with-files
+
+                  DB_FILE=$(ls -1t "$BACKUP_DIR"/*-"$SITE_SLUG"-database.sql.gz | head -1) \
+                    || die "no database dump produced"
+                  STAMP=$(basename "$DB_FILE" | sed "s/-$SITE_SLUG-database.sql.gz$//")
+                  log "backup stamp: $STAMP"
+
+                  # ---- 1. local integrity -------------------------------------
+                  gzip -t "$DB_FILE" || die "database dump is not a valid gzip"
+                  for kind in files private-files; do
+                    TAR="$BACKUP_DIR/$STAMP-$SITE_SLUG-$kind.tar"
+                    [ -f "$TAR" ] || { log "WARN no $kind archive"; continue; }
+                    tar -tf "$TAR" >/dev/null || die "$kind archive is unreadable"
+                  done
+                  log "local integrity OK"
+
+                  # ---- 2. off-cluster upload ----------------------------------
+                  curl -fsS -u "$NC_USER:$NC_PASS" -X MKCOL "$REMOTE_DIR/" >/dev/null 2>&1 || true
+                  for FILE in "$BACKUP_DIR/$STAMP-$SITE_SLUG-"*; do
+                    NAME=$(basename "$FILE")
+                    LOGICAL=$(echo "$NAME" | sed "s/^$STAMP-$SITE_SLUG-//")
+                    SIZE=$(stat -c %s "$FILE")
+                    log "uploading $NAME ($SIZE bytes)"
+                    curl -fsS --retry 5 --retry-delay 5 --retry-all-errors \
+                      -u "$NC_USER:$NC_PASS" -T "$FILE" "$REMOTE_DIR/$NAME" \
+                      || die "upload failed for $NAME"
+                    REMOTE_SIZE=$(curl -fsSI -u "$NC_USER:$NC_PASS" "$REMOTE_DIR/$NAME" \
+                      | tr -d '\r' | awk 'tolower($1)=="content-length:" {print $2}' | tail -1)
+                    [ "$REMOTE_SIZE" = "$SIZE" ] \
+                      || die "size mismatch for $NAME (local $SIZE, remote ${REMOTE_SIZE:-?})"
+                    log "verified $LOGICAL ($REMOTE_SIZE bytes off-cluster)"
+                  done
+
+                  # ---- 3. retention -------------------------------------------
+                  CUTOFF_LOCAL=$(date -d "-$LOCAL_KEEP_DAYS days" +%Y%m%d)
+                  for FILE in "$BACKUP_DIR"/*-"$SITE_SLUG"-*; do
+                    [ -e "$FILE" ] || continue
+                    FSTAMP=$(basename "$FILE" | cut -d- -f1)
+                    case "$FSTAMP" in
+                      [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+                      *) continue ;;
+                    esac
+                    if [ "$FSTAMP" -lt "$CUTOFF_LOCAL" ]; then
+                      log "pruning local $(basename "$FILE")"
+                      rm -f "$FILE"
+                    fi
+                  done
+
+                  CUTOFF_REMOTE=$(date -d "-$REMOTE_KEEP_DAYS days" +%Y%m%d)
+                  REMOTE_LIST=$(curl -fsS -u "$NC_USER:$NC_PASS" -X PROPFIND -H "Depth: 1" \
+                    --data '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getlastmodified/></d:prop></d:propfind>' \
+                    "$REMOTE_DIR/" 2>/dev/null || true)
+                  for NAME in $(echo "$REMOTE_LIST" | grep -o '<d:href>[^<]*</d:href>' \
+                      | sed 's|<d:href>||; s|</d:href>||' | xargs -n1 basename 2>/dev/null || true); do
+                    FSTAMP=$(echo "$NAME" | cut -d- -f1)
+                    case "$FSTAMP" in
+                      [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+                      *) continue ;;
+                    esac
+                    if [ "$FSTAMP" -lt "$CUTOFF_REMOTE" ]; then
+                      log "pruning remote $NAME"
+                      curl -fsS -u "$NC_USER:$NC_PASS" -X DELETE "$REMOTE_DIR/$NAME" >/dev/null || true
+                    fi
+                  done
+
+                  log "done: $STAMP backed up locally and off-cluster"
+              env:
+                - name: NC_URL
+                  valueFrom:
+                    secretKeyRef: {name: erpnext-backup-nextcloud, key: NC_URL}
+                - name: NC_USER
+                  valueFrom:
+                    secretKeyRef: {name: erpnext-backup-nextcloud, key: NC_USER}
+                - name: NC_PASS
+                  valueFrom:
+                    secretKeyRef: {name: erpnext-backup-nextcloud, key: NC_PASS}
+              resources:
+                requests: {cpu: 100m, memory: 512Mi}
+                limits: {cpu: "2", memory: 3Gi}
+              volumeMounts:
+                - name: sites-dir
+                  mountPath: /home/frappe/frappe-bench/sites
+          volumes:
+            - name: sites-dir
+              persistentVolumeClaim:
+                claimName: erpnext

@@ -50,7 +50,7 @@ jobs:
             DONATIONS_REF=v0.3.1
           push: true
           tags: |
-            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout3-donations7
+            ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout3-donations8
             ghcr.io/gliax/erpnext:latest-crm
           cache-from: type=gha
           cache-to: type=gha,mode=max

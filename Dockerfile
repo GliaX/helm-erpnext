@@ -27,7 +27,7 @@
 #     Also pinned to a tag (DONATIONS_REF) for the same cache reason.
 #
 # Build (the CI workflow does this on push):
-#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout3-donations7 \
+#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout3-donations8 \
 #     --build-arg CRM_REPO=https://github.com/tareko/crm.git \
 #     --build-arg CRM_BRANCH=fix-assign-to-v1.x \
 #     --build-arg EMAIL_BUILDER_REF=v1.0.4 .
@@ -121,6 +121,12 @@ for ad in glob.glob('assets/*/'):
 json.dump(d, open(p, 'w'), indent=2)
 print(f'manifest rebuilt from dist bundles ({fixed} entries corrected)')
 PY
+
+# S3 client for the backup CronJob's DigitalOcean Spaces mirror (boto3 is not in
+# the base image). Backups run `python3 /opt/glia-backup/spaces.py` in this image.
+RUN cd /home/frappe/frappe-bench \
+ && ./env/bin/pip install --no-cache-dir boto3 \
+ && ./env/bin/python -c "import boto3; print('boto3', boto3.__version__)"
 
 # Sanity: all apps present and assets collected.
 RUN test -d /home/frappe/frappe-bench/apps/crm \

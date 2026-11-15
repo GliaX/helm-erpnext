@@ -29,7 +29,7 @@
 #     freshness alert that emails info@glia.org when backups stop.
 #
 # Build (the CI workflow does this on push):
-#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout6-donations8-ops6 \
+#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout6-donations8-ops7 \
 #     --build-arg CRM_REPO=https://github.com/tareko/crm.git \
 #     --build-arg CRM_BRANCH=fix-assign-to-v1.x \
 #     --build-arg EMAIL_BUILDER_REF=v1.0.4 .
@@ -52,7 +52,7 @@ ARG GUEST_CHECKOUT_REF=v0.0.5
 ARG DONATIONS_REPO=https://github.com/GliaX/glia-donations
 ARG DONATIONS_REF=v0.3.1
 ARG OPS_REPO=https://github.com/GliaX/glia-ops
-ARG OPS_REF=v0.1.5
+ARG OPS_REF=v0.1.6
 
 WORKDIR /home/frappe/frappe-bench
 

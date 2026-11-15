@@ -65,7 +65,7 @@ spec:
             supplementalGroups: [1000]
           containers:
             - name: backup
-              image: ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout3
+              image: ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout3-donations1
               command: ["bash", "-lc"]
               args:
                 - |

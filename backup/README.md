@@ -1,57 +1,112 @@
 # ERPNext backups & disaster recovery
 
-**Status (2026-11-15):** automated daily backup with an off-cluster copy is
-**live**, and a restore has been **proven** by loading a dumped copy into a
-scratch database on the cluster.
+**Status (2026-11-15):** automated backups run **every 6 hours**, are copied to
+**two independent off-cluster providers**, are monitored by an alert that
+emails `info@glia.org` when they stop, and a restore has been **proven** by
+loading a dumped copy into a scratch database.
 
-Before this existed the newest dump was a hand-run one and `sites/` lived only
-on a single ReadWriteOnce DigitalOcean block volume — losing the node or the
-PVC lost the whole store.
+Before this existed there was no automated backup at all and `sites/` lived only
+on a single ReadWriteOnce DigitalOcean volume — losing the node or the PVC lost
+the whole store.
 
 ---
 
 ## 1. What runs
 
-`erpnext-backup-cronjob.yaml` — CronJob `erpnext-backup` in namespace
-`erpnext`, **03:30 America/Toronto daily**.
+CronJob `erpnext-backup` in namespace `erpnext`, schedule `30 */6 * * *
+America/Toronto` (00:30, 06:30, 12:30, 18:30). One pod, pinned to
+`nodeSelector: glia.workload=erpnext` because the sites PVC is ReadWriteOnce.
 
-1. `bench --site asset.glia.org backup --with-files` inside a pod that mounts
-   the same sites PVC (pinned by `nodeSelector: glia.workload=erpnext`, because
-   the volume is ReadWriteOnce and only pods on that node may attach it).
-   Produces, under `sites/asset.glia.org/private/backups/`:
-   - `<stamp>-asset_glia_org-database.sql.gz` (~13 MB)
-   - `<stamp>-asset_glia_org-files.tar` (~106 MB, public files)
+`backup/backup.sh` (mounted from ConfigMap `erpnext-backup-scripts`):
+
+1. `bench --site asset.glia.org backup --with-files` → `sites/<site>/private/backups/`:
+   - `<stamp>-asset_glia_org-database.sql.gz` (~13.5 MB)
+   - `<stamp>-asset_glia_org-files.tar` (~106 MB public files)
    - `<stamp>-asset_glia_org-private-files.tar` (~240 KB)
    - `<stamp>-asset_glia_org-site_config_backup.json`
-2. **Verifies** locally: `gzip -t` on the dump and `tar -tf` on both archives.
-3. **Uploads** the set to Nextcloud over WebDAV, then re-reads each file's
-   `Content-Length` off-cluster and compares it with the local size. A mismatch
-   fails the job.
-4. **Prunes**: local sets older than 14 days, remote sets older than 120 days
-   (both by the timestamp in the filename).
+2. **Integrity:** `gzip -t` on the dump, `tar -tf` on both archives.
+3. **Copy #1 — Nextcloud** (WebDAV, off-cluster droplet):
+   `https://cloud.glia.org/remote.php/dav/files/tloubani/erpnext-backups/asset.glia.org/`
+   Each file is uploaded then re-read off-cluster and its `Content-Length`
+   compared with the local size.
+4. **Copy #2 — DigitalOcean Spaces** (`backup/spaces.py`, boto3, S3 API):
+   bucket `glia-group`, prefix `erpnext-backups/<site>/<stamp>/`, each object
+   verified by `HEAD` size. A different provider from copy #1.
+5. **Retention:** 14 days on the PVC, 120 days on both remote copies.
+6. **Status marker:** `sites/<site>/private/backups/last_run.json` —
+   `{status: ok|failed, stage, stamp, finished}`. A `trap` writes `failed` with
+   the stage where it died.
 
-Off-cluster destination:
-`https://cloud.glia.org/remote.php/dav/files/tloubani/erpnext-backups/asset.glia.org/`
+Any failure exits non-zero → the Job is marked failed, and the marker tells the
+health check *where* it broke.
 
-Credentials live in the k8s Secret `erpnext-backup-nextcloud`
-(`NC_URL`, `NC_USER`, `NC_PASS` = a Nextcloud **app password**, ACCESS.md §2).
-Re-create it, never commit it:
+## 2. Alerting
+
+The backup job cannot alert about its own failure, so the check is out-of-band:
+the **`glia_ops`** app (<https://github.com/GliaX/glia-ops>) runs a Frappe
+scheduler job (`glia_ops.backups.daily_check`) that reads the marker and emails
+`info@glia.org` when it is:
+
+- missing (nothing has ever completed, or the volume was replaced),
+- `failed` (the mail names the failing stage), or
+- older than 26 h (three missed 6-hourly runs).
+
+Alerts are de-duplicated for 12 h and the dedupe clears as soon as a healthy
+backup lands, so the next incident alerts immediately.
+
+Run it by hand:
 
 ```sh
+kubectl -n erpnext exec deploy/erpnext-gunicorn -- bash -lc \
+  'cd /home/frappe/frappe-bench && bench --site asset.glia.org execute glia_ops.backups.run_check'
+```
+
+It reports `{"healthy": true|false, ...}` and sends mail only when unhealthy.
+
+---
+
+## 3. Credentials & manifests
+
+All secrets are created out of band; none are in git.
+
+```sh
+# copy #1 — Nextcloud app password (ACCESS.md §2)
 kubectl -n erpnext create secret generic erpnext-backup-nextcloud \
   --from-literal=NC_URL=https://cloud.glia.org \
   --from-literal=NC_USER=tloubani \
   --from-literal=NC_PASS=<app password>
+
+# copy #2 — DO Spaces keys (the bucket is shared with Mattermost)
+kubectl -n erpnext create secret generic erpnext-backup-spaces \
+  --from-literal=SPACES_ENDPOINT=https://nyc3.digitaloceanspaces.com \
+  --from-literal=SPACES_REGION=nyc3 \
+  --from-literal=SPACES_BUCKET=glia-group \
+  --from-literal=SPACES_KEY=<access key> \
+  --from-literal=SPACES_SECRET=<secret key>
 ```
+
+Scripts live in this repo and are mounted from a ConfigMap — **re-apply after
+editing `backup.sh` or `spaces.py`**:
+
+```sh
+kubectl -n erpnext create configmap erpnext-backup-scripts \
+  --from-file=backup/backup.sh --from-file=backup/spaces.py \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl apply -f backup/erpnext-backup-cronjob.yaml
+```
+
+Rotation = update the secret; no image or manifest change needed.
 
 ---
 
-## 2. Daily operations
+## 4. Daily operations
 
 ```sh
-kubectl -n erpnext get cronjob erpnext-backup            # schedule/state
-kubectl -n erpnext get jobs | grep erpnext-backup        # history
-kubectl -n erpnext logs job/<job-name>                   # what happened
+kubectl -n erpnext get cronjob,jobs | grep erpnext-backup   # schedule + history
+kubectl -n erpnext logs job/<job-name>                      # what happened
+kubectl -n erpnext exec deploy/erpnext-gunicorn -- \
+  cat /home/frappe/frappe-bench/sites/asset.glia.org/private/backups/last_run.json
 ```
 
 Run one now:
@@ -61,57 +116,49 @@ kubectl -n erpnext create job --from=cronjob/erpnext-backup "erpnext-backup-manu
 kubectl -n erpnext logs -f job/<job-name>
 ```
 
-A healthy run ends with `[backup] done: <stamp> backed up locally and
-off-cluster`, and every file prints `verified … (N bytes off-cluster)`.
-
-Note: finished Jobs are kept 14 days (`ttlSecondsAfterFinished`), so a failure
-is easy to inspect after the fact.
+A healthy run ends with `[backup] done: <stamp> backed up locally, on Nextcloud
+and mirrored to Spaces`, and the marker shows `"status": "ok"`.
 
 ---
 
-## 3. Restore drill (already performed 2026-11-15)
+## 5. Restore drill (performed 2026-11-15)
 
-The point of a backup is a restore that works. This drill was run end-to-end:
+The point of a backup is a restore that works.
 
 ```sh
-# 1. pull the newest dump back from Nextcloud (proves the off-cluster copy is real)
+# 1. pull the newest dump back from Nextcloud (proves the remote copy is real)
 curl -u "$NEXTCLOUD_USERNAME:$NEXTCLOUD_APP_PASSWORD" \
   "$NEXTCLOUD_URL/remote.php/dav/files/$NEXTCLOUD_USERNAME/erpnext-backups/asset.glia.org/<stamp>-asset_glia_org-database.sql.gz" \
-  -o /tmp/drill.sql.gz
-gzip -t /tmp/drill.sql.gz
+  -o /tmp/drill.sql.gz && gzip -t /tmp/drill.sql.gz
 
-# 2. load it into a scratch database (never the live one)
+# 2. load into a scratch database (never the live one)
 ROOTPW=$(kubectl -n erpnext get secret erpnext -o jsonpath='{.data.mariadb-root-password}' | base64 -d)
 kubectl -n erpnext exec erpnext-mariadb-sts-0 -- \
   mysql -uroot -p"$ROOTPW" -e 'CREATE DATABASE restore_drill CHARACTER SET utf8mb4'
 gzip -dc /tmp/drill.sql.gz | kubectl -n erpnext exec -i erpnext-mariadb-sts-0 -- \
   mysql -uroot -p"$ROOTPW" restore_drill
 
-# 3. sanity-check counts, then drop it
-kubectl -n erpnext exec -i erpnext-mariadb-sts-0 -- mysql -uroot -p"$ROOTPW" -N <<'SQL'
-SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='restore_drill';
-USE restore_drill; SELECT COUNT(*) FROM `tabSales Order`;
-SQL
-kubectl -n erpnext exec erpnext-mariadb-sts-0 -- mysql -uroot -p"$ROOTPW" -e 'DROP DATABASE restore_drill'
+# 3. sanity counts, then drop
+kubectl -n erpnext exec erpnext-mariadb-sts-0 -- mysql -uroot -p"$ROOTPW" -N \
+  -e 'SELECT COUNT(*) FROM restore_drill.`tabSales Order`'
+kubectl -n erpnext exec erpnext-mariadb-sts-0 -- \
+  mysql -uroot -p"$ROOTPW" -e 'DROP DATABASE restore_drill'
 ```
 
-Result for `20261115_011040` (live counts in brackets):
-816 tables · 14,926 contacts (14,926) · 4,275 customers (4,275) ·
-580 sales orders (580) · 29 website items (29) · 247 items (247) ·
-38 blog posts (38) · 0 guest carts (0). **Match.**
+Result for `20261115_011040` (live counts in brackets): 816 tables ·
+14,926 contacts (14,926) · 4,275 customers (4,275) · 580 sales orders (580) ·
+29 website items (29) · 247 items (247) · 38 blog posts (38). **Match.**
 
 ---
 
-## 4. Full-site restore (disaster)
-
-Assumes the image is deployable and the PVC is empty/lost.
+## 6. Full-site restore (disaster)
 
 ```sh
-# 1. get the newest set down from Nextcloud into the bench
 kubectl -n erpnext exec -it deploy/erpnext-gunicorn -- bash
 cd /home/frappe/frappe-bench
-# (inside the pod, with curl available)
-#   curl -u ... -T/-o into sites/<site>/private/backups/
+
+# 1. bring the newest set down (Nextcloud or Spaces) into
+#    sites/asset.glia.org/private/backups/
 
 # 2. recreate the site skeleton if the PVC is gone
 bench new-site asset.glia.org --mariadb-root-password <pw> \
@@ -124,27 +171,31 @@ bench --site asset.glia.org restore \
   --with-private-files sites/asset.glia.org/private/backups/<stamp>-asset_glia_org-private-files.tar \
   --force
 
-# 4. align the installed apps with the image, then migrate
-bench --site asset.glia.org install-app payments webshop crm glia_email_builder glia_guest_checkout
+# 4. align apps with the image, then migrate
+bench --site asset.glia.org install-app payments webshop crm glia_email_builder \
+  glia_guest_checkout glia_donations glia_ops
 bench --site asset.glia.org migrate
 bench --site asset.glia.org clear-cache
 ```
 
-Then verify `/all-products`, a product page, `/guest_cart` and the desk login.
-The site config backup (`*-site_config_backup.json`) carries `encryption_key`
-and `site_config` — restoring the same encryption key matters, or stored
-secrets (gateway keys) become unreadable.
+Then verify `/all-products`, a product page, `/guest_cart`, `/recurring_donation`
+and the desk login. The `*-site_config_backup.json` carries `encryption_key` —
+restore the same key or stored secrets (gateway keys) become unreadable.
 
 ---
 
-## 5. Known gaps
+## 7. Known gaps
 
-- **Alerting**: a failed job is only visible via `kubectl`. Add a failure
-  notification (email/webhook) — not yet wired.
-- **Restore drill is manual**: repeat it after any schema-changing upgrade, at
-  least quarterly; consider automating it as a monthly job against a scratch DB.
-- **Off-cluster copy is single-destination** (Nextcloud on the auth droplet).
-  A second destination (DO Spaces or another host) would harden this.
-- **No point-in-time recovery**: MariaDB binary logs are not being archived;
-  worst-case loss is up to 24 h of orders. Raise the schedule (e.g. every 6 h)
-  if that window is unacceptable for a storefront.
+- **Files are not encrypted at rest**: the Spaces bucket and Nextcloud folder
+  hold the dump as-is. Both are private, but client-side encryption (age/gpg
+  with an offline key) would harden this.
+- **Single-host Nextcloud**: copy #1 lives on the auth droplet; copy #2 (Spaces)
+  is a genuinely different provider, so this is no longer a single-point copy.
+- **No point-in-time recovery**: MariaDB binary logs are not archived, so
+  worst-case loss is one backup interval (currently ≤ 6 h). Tighten the schedule
+  if that is still too much.
+- **Restore drill is manual**: repeat it after schema-changing upgrades, at
+  least quarterly; a monthly automated drill against a scratch DB would be
+  better.
+- **Alerting is email only**: if the mail relay is down, the alert is lost.
+  A Mattermost webhook as a second channel would help.

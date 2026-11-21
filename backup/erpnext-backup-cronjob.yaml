@@ -77,7 +77,7 @@ spec:
             supplementalGroups: [1000]
           containers:
             - name: backup
-              image: ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout23-donations11-ops13
+              image: ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout24-donations11-ops13
               command: ["bash", "/opt/glia-backup/backup.sh"]
               env:
                 - name: NC_URL

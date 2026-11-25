@@ -29,7 +29,7 @@
 #     freshness alert that emails info@glia.org when backups stop.
 #
 # Build (the CI workflow does this on push):
-#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout25-donations11-ops13 \
+#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout25-donations11-ops13-paymentsfix1 \
 #     --build-arg CRM_REPO=https://github.com/tareko/crm.git \
 #     --build-arg CRM_BRANCH=fix-assign-to-v1.x \
 #     --build-arg EMAIL_BUILDER_REF=v1.0.4 .
@@ -37,8 +37,13 @@ FROM frappe/erpnext:v16.30.0
 
 ARG CRM_REPO=https://github.com/tareko/crm.git
 ARG CRM_BRANCH=fix-assign-to-v1.x
-ARG PAYMENTS_REPO=https://github.com/frappe/payments.git
-ARG PAYMENTS_BRANCH=version-16
+# Payments from the Glia fork: guest web form submissions must bind to the Web
+# Form's own DocType, not the client-supplied `data.doctype`. Pending upstream:
+# issue frappe/payments#276, PR #310 (minimal) and #308 (fuller rewrite). Revert
+# the REPO to frappe/payments and BRANCH to version-16 once a fixed release is
+# published.
+ARG PAYMENTS_REPO=https://github.com/tareko/payments.git
+ARG PAYMENTS_BRANCH=fix/web-form-accept-doctype
 ARG WEBSHOP_REPO=https://github.com/frappe/webshop.git
 ARG WEBSHOP_BRANCH=version-16
 ARG EMAIL_BUILDER_REPO=https://github.com/GliaX/glia-email-builder

@@ -144,6 +144,15 @@ ERPNext core (`Customer`/`Contact`/`Address`). See `GliaX/glia-shopify-erpnext`.
 - `values.pin.yaml` (node-pin) is **required** for every rollout (RWO sites PVC).
 - After any future image rebuild, run `bench --site asset.glia.org migrate` then
   `kubectl rollout restart` the erpnext deployments.
+- **Stale asset hashes after a rebuild (2026-11-24):** a helm upgrade alone can
+  leave pages requesting the *previous* image's hashed bundles
+  (`/assets/.../website.bundle.<OLD>.css` → 404 served as `text/html`, browser
+  rejects it), so the site renders unstyled. `bench clear-cache` does not fix it
+  on its own. After the rollout, clear the site caches and **restart the app
+  pods a second time**:
+  `bench --site asset.glia.org clear-website-cache && bench --site asset.glia.org clear-cache`,
+  then `kubectl -n erpnext rollout restart deploy/erpnext-gunicorn` (plus the
+  workers/scheduler). Verify a page's `<link>` hashes return `200 text/css`.
 
 ## Glia Email Builder (2026-10-18)
 

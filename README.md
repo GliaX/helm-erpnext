@@ -11,7 +11,7 @@ configured; `kubectl apply`/manual edits should be avoided going forward.
 |---|---|
 | **Release / namespace** | `erpnext` / `erpnext` |
 | **Upstream chart** | `frappe/erpnext` **8.0.21** |
-| **App version (image)** | custom `gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout1` (ERPNext v16.30.0 + CRM + Payments + Webshop + Glia Email Builder) |
+| **App version (image)** | custom `gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout25-donations11-ops13-paymentsfix1-campaignpers1` (ERPNext v16.30.0 + CRM + Payments + Webshop + Glia Email Builder + Guest Checkout + Donations + Ops + Campaign Personalise) |
 | **Site** | `asset.glia.org` |
 | **Database** | in-cluster MariaDB statefulset (`mariadb:10.6`) on a DigitalOcean block-storage PVC (`do-block-storage`, 8 Gi). A DigitalOcean managed DB is configured in `values.yaml` but currently **disabled** (commented). |
 | **Backups** | `data-erpnext-mariadb-sts-0` PVC + `erpnext` (sites) PVC. See [Backups](#backups). |
@@ -207,6 +207,25 @@ to communications staff instead of making them System Managers.
 - an existing Email Template → **Actions → Design with Blocks**.
 
 The classic Email Template form remains for raw HTML templates.
+
+---
+## Campaign personalisation (2026-11-26)
+
+`campaign_personalise` fixes ERPNext's campaign merge: the stock pipeline renders
+an Email Template **once** with `doc` = the Email Group, so `{{ doc.first_name }}`
+falls back for every recipient ("Dear Friend"). The app overrides `Email Queue`,
+re-renders each campaign message against its Contact and bakes a signed
+per-recipient unsubscribe URL.
+
+- Repo: <https://github.com/GliaX/campaign_personalise> (MIT), pinned in the image
+  via `CAMPAIGN_PERSONALISE_REF`.
+- Upstream issue: <https://github.com/frappe/erpnext/issues/69657> (asks whether
+  maintainers want a PR or prefer the app).
+- Install on a site: `bench --site asset.glia.org install-app campaign_personalise`
+  (then clear caches + restart the app pods, as with any image rebuild).
+- Verified on production 2026-11-26: Contact `Anna` renders "Dear Anna," with a
+  signed unsubscribe link; transactional (non-campaign) queue rows are untouched.
+- Backend-only app: installed with `--skip-assets`; it ships no front-end bundles.
 
 ---
 ## Outgoing email / SMTP (2026-10-10)

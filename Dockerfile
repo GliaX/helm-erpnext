@@ -29,7 +29,7 @@
 #     freshness alert that emails info@glia.org when backups stop.
 #
 # Build (the CI workflow does this on push):
-#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout25-donations11-ops13-paymentsfix1 \
+#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout25-donations11-ops13-paymentsfix1-campaignpers1 \
 #     --build-arg CRM_REPO=https://github.com/tareko/crm.git \
 #     --build-arg CRM_BRANCH=fix-assign-to-v1.x \
 #     --build-arg EMAIL_BUILDER_REF=v1.0.4 .
@@ -58,6 +58,14 @@ ARG DONATIONS_REPO=https://github.com/GliaX/glia-donations
 ARG DONATIONS_REF=v0.3.4
 ARG OPS_REPO=https://github.com/GliaX/glia-ops
 ARG OPS_REF=v0.1.12
+# Per-recipient personalisation for Email Campaigns (GliaX/campaign_personalise).
+# ERPNext renders campaign templates once against the Email Group, so
+# `{{ doc.first_name }}` falls back for every recipient ("Dear Friend").
+# The app overrides Email Queue and re-renders each campaign message against
+# its Contact, baking a signed per-recipient unsubscribe URL. Upstream issue:
+# frappe/erpnext#69657. Bump the tag to consume a new release.
+ARG CAMPAIGN_PERSONALISE_REPO=https://github.com/GliaX/campaign_personalise
+ARG CAMPAIGN_PERSONALISE_REF=v0.1.0
 
 WORKDIR /home/frappe/frappe-bench
 
@@ -90,6 +98,9 @@ RUN bench get-app "${DONATIONS_REPO}" --branch "${DONATIONS_REF}"
 # backup CronJob stops delivering. Small, dependency-free.
 RUN bench get-app "${OPS_REPO}" --branch "${OPS_REF}"
 
+# Per-recipient Email Campaign personalisation (GliaX/campaign_personalise).
+RUN bench get-app "${CAMPAIGN_PERSONALISE_REPO}" --branch "${CAMPAIGN_PERSONALISE_REF}"
+
 # In a siteless image build, `bench get-app` does not always register the app in
 # sites/apps.txt — and `bench build` only compiles+symlinks apps listed there.
 # Register all bundled apps explicitly, then build (compiles JS/CSS bundles,
@@ -98,14 +109,14 @@ RUN bench get-app "${OPS_REPO}" --branch "${OPS_REF}"
 RUN cd /home/frappe/frappe-bench \
  && touch sites/apps.txt \
  && if [ -n "$(tail -c 1 sites/apps.txt)" ]; then printf '\n' >> sites/apps.txt; fi \
- && for app in payments webshop crm glia_email_builder glia_guest_checkout glia_donations glia_ops; do \
+ && for app in payments webshop crm glia_email_builder glia_guest_checkout glia_donations glia_ops campaign_personalise; do \
         grep -qxF "$app" sites/apps.txt || echo "$app" >> sites/apps.txt; \
     done
 RUN bench build
 # Belt-and-suspenders: ensure the assets/<app> symlinks exist (bench build makes
 # these, but recreate for any app that was missed).
 RUN cd /home/frappe/frappe-bench \
- && for app in payments webshop crm glia_email_builder glia_guest_checkout glia_donations glia_ops; do \
+ && for app in payments webshop crm glia_email_builder glia_guest_checkout glia_donations glia_ops campaign_personalise; do \
         src="apps/$app/$app/public"; \
         [ -d "$src" ] && ln -sfn "$(pwd)/$src" "assets/$app" || true; \
     done
@@ -149,6 +160,7 @@ RUN test -d /home/frappe/frappe-bench/apps/crm \
  && test -d /home/frappe/frappe-bench/apps/glia_guest_checkout \
  && test -d /home/frappe/frappe-bench/apps/glia_donations \
  && test -d /home/frappe/frappe-bench/apps/glia_ops \
+ && test -d /home/frappe/frappe-bench/apps/campaign_personalise \
  && test -d /home/frappe/frappe-bench/assets/webshop \
  && test -d /home/frappe/frappe-bench/assets/glia_email_builder \
  && test -d /home/frappe/frappe-bench/assets/glia_guest_checkout \
@@ -161,4 +173,5 @@ RUN test -d /home/frappe/frappe-bench/apps/crm \
  && grep -q "glia_guest_checkout" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "glia_donations" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "glia_ops" /home/frappe/frappe-bench/sites/apps.txt \
- && echo "crm + payments + webshop + email builder + guest checkout + donations + ops apps present, assets built"
+ && grep -q "campaign_personalise" /home/frappe/frappe-bench/sites/apps.txt \
+ && echo "crm + payments + webshop + email builder + guest checkout + donations + ops + campaign_personalise apps present, assets built"

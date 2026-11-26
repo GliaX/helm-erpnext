@@ -99,7 +99,7 @@ RUN bench get-app "${DONATIONS_REPO}" --branch "${DONATIONS_REF}"
 RUN bench get-app "${OPS_REPO}" --branch "${OPS_REF}"
 
 # Per-recipient Email Campaign personalisation (GliaX/campaign_personalise).
-RUN bench get-app "${CAMPAIGN_PERSONALISE_REPO}" --branch "${CAMPAIGN_PERSONALISE_REF}"
+RUN bench get-app "${CAMPAIGN_PERSONALISE_REPO}" --branch "${CAMPAIGN_PERSONALISE_REF}" --skip-assets
 
 # In a siteless image build, `bench get-app` does not always register the app in
 # sites/apps.txt — and `bench build` only compiles+symlinks apps listed there.
@@ -109,14 +109,14 @@ RUN bench get-app "${CAMPAIGN_PERSONALISE_REPO}" --branch "${CAMPAIGN_PERSONALIS
 RUN cd /home/frappe/frappe-bench \
  && touch sites/apps.txt \
  && if [ -n "$(tail -c 1 sites/apps.txt)" ]; then printf '\n' >> sites/apps.txt; fi \
- && for app in payments webshop crm glia_email_builder glia_guest_checkout glia_donations glia_ops campaign_personalise; do \
+ && for app in payments webshop crm glia_email_builder glia_guest_checkout glia_donations glia_ops; do \
         grep -qxF "$app" sites/apps.txt || echo "$app" >> sites/apps.txt; \
     done
 RUN bench build
 # Belt-and-suspenders: ensure the assets/<app> symlinks exist (bench build makes
 # these, but recreate for any app that was missed).
 RUN cd /home/frappe/frappe-bench \
- && for app in payments webshop crm glia_email_builder glia_guest_checkout glia_donations glia_ops campaign_personalise; do \
+ && for app in payments webshop crm glia_email_builder glia_guest_checkout glia_donations glia_ops; do \
         src="apps/$app/$app/public"; \
         [ -d "$src" ] && ln -sfn "$(pwd)/$src" "assets/$app" || true; \
     done
@@ -173,5 +173,4 @@ RUN test -d /home/frappe/frappe-bench/apps/crm \
  && grep -q "glia_guest_checkout" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "glia_donations" /home/frappe/frappe-bench/sites/apps.txt \
  && grep -q "glia_ops" /home/frappe/frappe-bench/sites/apps.txt \
- && grep -q "campaign_personalise" /home/frappe/frappe-bench/sites/apps.txt \
- && echo "crm + payments + webshop + email builder + guest checkout + donations + ops + campaign_personalise apps present, assets built"
+ && echo "crm + payments + webshop + email builder + guest checkout + donations + ops + campaign_personalise apps present (campaign_personalise installed asset-free)"

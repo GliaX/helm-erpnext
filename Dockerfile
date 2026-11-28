@@ -29,7 +29,7 @@
 #     freshness alert that emails info@glia.org when backups stop.
 #
 # Build (the CI workflow does this on push):
-#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout25-donations11-ops13-paymentsfix1-campaignpers1 \
+#   docker build -t ghcr.io/gliax/erpnext:v16.30.0-crm-v1.80.0-emailbuilder5-guestcheckout25-donations11-ops13-paymentsfix1-campaignpers3 \
 #     --build-arg CRM_REPO=https://github.com/tareko/crm.git \
 #     --build-arg CRM_BRANCH=fix-assign-to-v1.x \
 #     --build-arg EMAIL_BUILDER_REF=v1.0.4 .
@@ -65,7 +65,7 @@ ARG OPS_REF=v0.1.12
 # its Contact, baking a signed per-recipient unsubscribe URL. Upstream issue:
 # frappe/erpnext#69657. Bump the tag to consume a new release.
 ARG CAMPAIGN_PERSONALISE_REPO=https://github.com/GliaX/campaign_personalise
-ARG CAMPAIGN_PERSONALISE_REF=v0.2.0
+ARG CAMPAIGN_PERSONALISE_REF=v0.3.0
 
 WORKDIR /home/frappe/frappe-bench
 

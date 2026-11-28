@@ -65,7 +65,7 @@ ARG OPS_REF=v0.1.12
 # its Contact, baking a signed per-recipient unsubscribe URL. Upstream issue:
 # frappe/erpnext#69657. Bump the tag to consume a new release.
 ARG CAMPAIGN_PERSONALISE_REPO=https://github.com/GliaX/campaign_personalise
-ARG CAMPAIGN_PERSONALISE_REF=v0.1.0
+ARG CAMPAIGN_PERSONALISE_REF=v0.2.0
 
 WORKDIR /home/frappe/frappe-bench
 
